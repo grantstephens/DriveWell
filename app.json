@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "DriveWell",
+    "slug": "drivewell",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1B4D2E"
+    },
+    "android": {
+      "package": "xyz.hub13.drivewell",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png",
+        "backgroundColor": "#1B4D2E"
+      },
+      "permissions": [],
+      "blockedPermissions": [
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.BODY_SENSORS",
+        "android.permission.HIGH_SAMPLING_RATE_SENSORS",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.VIBRATE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-asset",
+      "expo-system-ui",
+      "./plugins/reproducible-builds.js"
+    ]
+  }
+}

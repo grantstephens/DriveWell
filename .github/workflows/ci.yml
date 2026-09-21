@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+
+jobs:
+  check:
+    name: tsc + jest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          # Matches the pin in mise.toml - keep both in sync if you bump one.
+          node-version: '24.16.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run check

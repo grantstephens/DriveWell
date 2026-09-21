@@ -1,0 +1,188 @@
+# Recipe for DriveWell, to be submitted to fdroiddata as
+# metadata/xyz.hub13.drivewell.yml once v1.0.0 is tagged and published.
+# Until then there is no release to build, so Builds: below is a commented
+# template adapted from the proven ReminDiary recipe (where every claim in
+# these comments was CI-verified, not guessed); the TODO markers cover the
+# fields that only exist after the first release. Uncomment and fill them
+# in when v1.0.0 lands, then keep this copy in sync with what is pushed.
+
+Categories:
+  - Sports & Health
+License: GPL-3.0-or-later
+AuthorName: Grant Stephens
+AuthorEmail: grant@stephens.co.za
+AuthorWebSite: https://grant.stephens.co.za
+SourceCode: https://github.com/grantstephens/DriveWell
+IssueTracker: https://github.com/grantstephens/DriveWell/issues
+Changelog: https://github.com/grantstephens/DriveWell/releases
+
+AutoName: DriveWell
+
+# No inline Description: fdroidserver pulls the text from
+# fastlane/metadata/android/en-US/ in this repo at build/update time; the
+# field is not schema-required.
+
+RepoType: git
+Repo: https://github.com/grantstephens/DriveWell.git
+
+# Builds: one entry per ABI (armeabi-v7a and arm64-v8a only, skipping the
+# emulator-only x86/x86_64 pair) instead of a single universal APK, per
+# https://f-droid.org/en/docs/Submitting_to_F-Droid_Quick_Start_Guide/#setup-abi-split.
+# versionCode is base * 10 + 1/+2 (VercodeOperation below), matching the
+# doc's required v7a < v8a ordering and release.yml's per-ABI split builds.
+# output: + a custom build: block instead of gradle: yes, because this is a
+# pure Expo managed-workflow repo: android/ is generated fresh by
+# `expo prebuild` and never committed, so `subdir: android/app` + `gradle:
+# yes` would fail the pre-build directory-exists check.
+#
+# Reproducible build: binary: + AllowedAPKSigningKeys work by transplanting
+# the reference binary's signature onto F-Droid's own from-source build and
+# checking it still verifies (apksigcopier) - which only succeeds if the
+# two are byte-identical. That needs, on top of the repo's own
+# plugins/reproducible-builds.gradle (installed into the generated android/
+# tree by the config plugin on every prebuild, mapping
+# GRADLE_USER_HOME/repo-root out of __FILE__ and llvm-stripping
+# .note.gnu.build-id from every merged .so):
+#   - the same sed-based version injection release.yml uses (inserting
+#     versionCode right after "android": {, not wherever JSON round-trip
+#     ordering puts it);
+#   - the buildFromSource autolinking insert (F-Droid's scanner policy
+#     disallows prebuilt binaries, so both sides must compile native
+#     modules from source, not consume prebuilt AARs);
+#   - the JDK 21 retarget (RN's gradle-plugin hardcodes a JDK 17 toolchain,
+#     conflicting with the buildserver's OpenJDK 21);
+#   - deleting the signingConfig line (never let Gradle sign: the
+#     comparison needs the unsigned output byte-identical, and signing must
+#     happen after normalization or it invalidates the signature);
+#   - -PreactNativeDevServerIp=localhost (otherwise the gradle-plugin bakes
+#     the build machine's own LAN IP into resources.arsc, and every machine
+#     embeds a different address);
+#   - the postbuild zipalign normalization below (apksigcopier's signature
+#     transplant requires both APKs' local-entry regions at the same byte
+#     length - both sides must apply the identical normalization, same tool
+#     and tag).
+#
+# TODO: fill in and uncomment both entries after v1.0.0 is tagged.
+# Builds:
+#   - versionName: 1.0.0
+#     # TODO: base versionCode (from tools/compute-version.sh) * 10 + 1
+#     versionCode: 100009991
+#     # TODO: full commit SHA of the v1.0.0 tag
+#     commit: 0000000000000000000000000000000000000000
+#     # TODO: real asset URL once release.yml has published the split APK
+#     binary: https://github.com/grantstephens/DriveWell/releases/download/v%v/drivewell-v%v-armeabi-v7a.apk
+#     srclibs:
+#       - reproducible-apk-tools@v0.3.0
+#     # Debian forky nodejs matches the buildserver's Node (24.19.0), the
+#     # same version release.yml pins for its reference builds.
+#     sudo:
+#       - echo "deb http://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
+#       - apt-get update
+#       - apt-get install -y -t forky nodejs npm
+#     init:
+#       - export CI=1
+#       - export EXPO_NO_TELEMETRY=1
+#       - npm ci
+#     prebuild:
+#       - export CI=1
+#       - export EXPO_NO_TELEMETRY=1
+#       # $$VERSION$$/$$VERCODE$$ are fdroidserver placeholders substituted
+#       # from this entry's own fields, which is what makes
+#       # AutoUpdateMode: Version below safe; anchored on the generic
+#       # "android": { structure so it isn't tied to this app.json.
+#       - sed -i -e '/"version"/s/1.0.0/$$VERSION$$/' -e '/"android":\ {/a "versionCode":$$VERCODE$$,'
+#         app.json
+#       - sed -i -e '1a "expo":{"autolinking":{"android":{"buildFromSource":[".*"]}}},' package.json
+#       - npx expo prebuild --platform android --no-install
+#       - sed -i '/jvmToolchain\|JavaVersion/s/17/21/' node_modules/@react-native/gradle-plugin/*/build.gradle.kts node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/JdkConfiguratorUtils.kt
+#       - sed -i -e '/signingConfig /d' android/app/build.gradle
+#       - printf '\norg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=2g\n' >> android/gradle.properties
+#     build:
+#       - cd android/app
+#       - gradle -PreactNativeArchitectures=armeabi-v7a assembleRelease -PreactNativeDevServerIp=localhost
+#     postbuild:
+#       - mv $$OUT$$ unaligned.apk
+#       - $$reproducible-apk-tools$$/zipalign.py --page-size 16 --pad-like-apksigner --replace unaligned.apk $$OUT$$
+#     scanignore:
+#       - node_modules/hermes-compiler/hermesc/linux64-bin/hermesc
+#       - node_modules/react-native-screens/android/build.gradle
+#       - node_modules/react-native-safe-area-context/android/build.gradle
+#       - node_modules/expo-modules-core/android/ExpoModulesCorePlugin.gradle
+#       - node_modules/react-native/ReactAndroid/publish.gradle
+#     scandelete:
+#       - node_modules/
+#     output: android/app/build/outputs/apk/release/*.apk
+#
+#   - versionName: 1.0.0
+#     # TODO: base versionCode * 10 + 2
+#     versionCode: 100009992
+#     # TODO: full commit SHA of the v1.0.0 tag (same as the armeabi-v7a entry)
+#     commit: 0000000000000000000000000000000000000000
+#     # TODO: real asset URL once release.yml has published the split APK
+#     binary: https://github.com/grantstephens/DriveWell/releases/download/v%v/drivewell-v%v-arm64-v8a.apk
+#     srclibs:
+#       - reproducible-apk-tools@v0.3.0
+#     sudo:
+#       - echo "deb http://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
+#       - apt-get update
+#       - apt-get install -y -t forky nodejs npm
+#     init:
+#       - export CI=1
+#       - export EXPO_NO_TELEMETRY=1
+#       - npm ci
+#     prebuild:
+#       - export CI=1
+#       - export EXPO_NO_TELEMETRY=1
+#       - sed -i -e '/"version"/s/1.0.0/$$VERSION$$/' -e '/"android":\ {/a "versionCode":$$VERCODE$$,'
+#         app.json
+#       - sed -i -e '1a "expo":{"autolinking":{"android":{"buildFromSource":[".*"]}}},' package.json
+#       - npx expo prebuild --platform android --no-install
+#       - sed -i '/jvmToolchain\|JavaVersion/s/17/21/' node_modules/@react-native/gradle-plugin/*/build.gradle.kts node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/JdkConfiguratorUtils.kt
+#       - sed -i -e '/signingConfig /d' android/app/build.gradle
+#       - printf '\norg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=2g\n' >> android/gradle.properties
+#     build:
+#       - cd android/app
+#       - gradle -PreactNativeArchitectures=arm64-v8a assembleRelease -PreactNativeDevServerIp=localhost
+#     postbuild:
+#       - mv $$OUT$$ unaligned.apk
+#       - $$reproducible-apk-tools$$/zipalign.py --page-size 16 --pad-like-apksigner --replace unaligned.apk $$OUT$$
+#     scanignore:
+#       - node_modules/hermes-compiler/hermesc/linux64-bin/hermesc
+#       - node_modules/react-native-screens/android/build.gradle
+#       - node_modules/react-native-safe-area-context/android/build.gradle
+#       - node_modules/expo-modules-core/android/ExpoModulesCorePlugin.gradle
+#       - node_modules/react-native/ReactAndroid/publish.gradle
+#     scandelete:
+#       - node_modules/
+#     output: android/app/build/outputs/apk/release/*.apk
+
+# TODO: pins which signing key the binary:-referenced reference APKs must
+# actually be signed with - the real release keystore's SHA-256 fingerprint,
+# extracted straight from a published signed APK via
+# `apksigner verify --print-certs` (no access to the private keystore
+# needed). Uncomment once the first release is published.
+# AllowedAPKSigningKeys: 0000000000000000000000000000000000000000000000000000000000000000
+
+AutoUpdateMode: Version
+# UpdateCheckMode: Tags would make `fdroid checkupdates` look for a
+# committed AndroidManifest.xml per tag to read versionCode/versionName
+# from, but android/ is generated by `expo prebuild` mid-recipe, never
+# committed, so no tag ever has one and checkupdates hard-fails. The fix is
+# UpdateCheckData pointed at fdroid-version.txt - a small file this repo's
+# own `make prepare-release` writes and commits before every tag, carrying
+# the exact versionCode release.yml computes (tools/compute-version.sh is
+# the single source of truth both share). The filever "." means "reuse the
+# same file's content for the versionName regex too".
+UpdateCheckMode: Tags
+# Derives each ABI split's versionCode from the raw one fdroid-version.txt
+# carries - * 10 + 1 for armeabi-v7a, + 2 for arm64-v8a, matching the two
+# Builds entries above in the same order. CurrentVersionCode must be the
+# max of these once set.
+VercodeOperation:
+  - '%c * 10 + 1'
+  - '%c * 10 + 2'
+UpdateCheckData: fdroid-version.txt|versionCode=([0-9]+)|.|versionName=(.+)
+# TODO: set both once the first release is published (CurrentVersionCode =
+# base versionCode * 10 + 2, the max of the two split codes).
+# CurrentVersion: 1.0.0
+# CurrentVersionCode: 100009992

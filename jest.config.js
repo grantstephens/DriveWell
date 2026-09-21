@@ -1,0 +1,30 @@
+// The Jest projects run in a fixed NEGATIVE-offset zone, set here because
+// Jest's node environment deep-copies process.env at setup: a test cannot
+// change TZ at runtime and have Date's local-time methods see it
+// (jestjs/jest#9856).
+//
+// Trip timestamps are stored as RFC3339 UTC but *displayed* with local-time
+// methods, so a UTC/local mix-up must actually change what a test sees. Under
+// a positive offset midnight UTC never rolls the local calendar date
+// backward, so a wrong implementation could still pass; under Los Angeles
+// (-7/-8) the same mistake renders a day early and fails loudly.
+process.env.TZ = 'America/Los_Angeles';
+
+module.exports = {
+  projects: [
+    {
+      displayName: 'logic',
+      testEnvironment: 'node',
+      testMatch: ['<rootDir>/src/(domain|storage|platform)/**/*.test.ts'],
+      transform: {
+        '^.+\\.tsx?$': ['babel-jest', { presets: ['babel-preset-expo'] }],
+      },
+    },
+    {
+      displayName: 'screens',
+      preset: 'jest-expo',
+      testMatch: ['<rootDir>/src/**/*.test.tsx'],
+      setupFiles: ['<rootDir>/jest/setupScreens.ts'],
+    },
+  ],
+};

@@ -1,0 +1,40 @@
+{
+  "name": "drivewell",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
+    "@react-navigation/bottom-tabs": "^7.18.17",
+    "@react-navigation/native": "^7.3.17",
+    "expo": "~57.0.15",
+    "expo-asset": "~57.0.13",
+    "expo-keep-awake": "~57.0.2",
+    "expo-sensors": "~57.0.3",
+    "expo-sqlite": "~57.0.1",
+    "expo-status-bar": "~57.0.1",
+    "expo-system-ui": "~57.0.4",
+    "react": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4"
+  },
+  "devDependencies": {
+    "@testing-library/react-native": "^14.0.1",
+    "@types/jest": "30.0.0",
+    "@types/node": "^26.5.1",
+    "@types/react": "~19.2.2",
+    "babel-preset-expo": "~57.0.0",
+    "jest": "~30.5.1",
+    "jest-expo": "57.0.4",
+    "typescript": "~7.0.2"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "test": "jest --passWithNoTests",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  },
+  "private": true
+}

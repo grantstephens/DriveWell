@@ -1,0 +1,384 @@
+# Builds a signed APK and AAB on tag push and attaches them to a GitHub
+# Release, which is what Obtainium watches.
+#
+# Required repository secrets (see README.md "Signing setup" for how to
+# generate the keystore and set these):
+#   ANDROID_KEYSTORE_BASE64  - base64 of your .keystore file
+#   ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASSWORD
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (must already exist)'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  BUNDLETOOL_VERSION: '1.18.3'
+
+jobs:
+  check:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.16.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+
+  release:
+    name: Signed APK and AAB
+    needs: check
+    runs-on: ubuntu-latest
+    env:
+      # Defense in depth for .so reproducibility: the primary fix is now
+      # compile-time - plugins/reproducible-builds.gradle maps both the repo
+      # root and GRADLE_USER_HOME out of __FILE__ via -ffile-prefix-map,
+      # making the embedded paths environment-independent. Confirmed by a
+      # byte-level diff of F-Droid's own CI build vs this workflow's: the
+      # ONLY content difference in libreact_codegen_rnscreens.so /
+      # libreact_codegen_safeareacontext.so was /home/vagrant/.gradle vs
+      # this runner's default /home/runner/.gradle (every other byte of
+      # both APKs already matched). Keeping the matching gradle home anyway
+      # in case another path-embedding source turns up later.
+      GRADLE_USER_HOME: /home/vagrant/.gradle
+    # Native compilers commonly embed the absolute source path into debug
+    # info inside compiled .so files - confirmed by a real reproducibility
+    # failure where matching every toolchain version (JDK, Node, NDK - the
+    # last already pinned via node_modules' own version catalog regardless
+    # of environment) still left native libs, AndroidManifest.xml, and
+    # resources.arsc differing. F-Droid's buildserver checks out to
+    # /home/vagrant/build/xyz.hub13.drivewell; this matches that path
+    # exactly so a from-source build here is byte-identical to F-Droid's.
+    defaults:
+      run:
+        working-directory: /home/vagrant/build/xyz.hub13.drivewell
+    steps:
+      # A direct git clone into the target path, not actions/checkout (to
+      # the default location) followed by cp -a: cp preserves this runner's
+      # own filesystem enumeration/timestamps rather than reproducing what
+      # a real git checkout at that exact path produces, and both native
+      # linking and resource packing can be sensitive to file iteration
+      # order - the cp -a version left native .so libs and resources.arsc
+      # still differing after every other toolchain/path/config fix landed.
+      #
+      # Explicit working-directory override on this step: the job's default
+      # (above) doesn't exist yet at this point, and the runner tries to
+      # start every step's shell IN that directory regardless of what the
+      # step's own command references, which fails before the command ever
+      # runs if it's missing - confirmed by a real CI failure earlier.
+      - name: Clone directly to F-Droid's buildserver path
+        working-directory: ${{ github.workspace }}
+        run: |
+          sudo mkdir -p /home/vagrant/build
+          sudo chown -R "$(id -un):$(id -gn)" /home/vagrant
+          git clone --quiet "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" \
+            /home/vagrant/build/xyz.hub13.drivewell
+          cd /home/vagrant/build/xyz.hub13.drivewell
+          git checkout --quiet "${{ github.event.inputs.tag || github.ref_name }}"
+
+      # Matches F-Droid's buildserver exactly (Node from Debian forky via
+      # `apt-get install -t forky nodejs`, currently 24.19.0), not this
+      # repo's own mise.toml pin (24.16.0, used for local dev and the
+      # `check` job above) - reproducible-build verification transplants
+      # F-Droid's own build's signature onto this APK and checks it still
+      # verifies, which only succeeds if the two are built byte-identical.
+      # A JDK/Node mismatch between this workflow and the buildserver was
+      # confirmed to break that (every file in the APK differed - dex,
+      # native libs, resources.arsc, AndroidManifest.xml) before this was
+      # pinned to match.
+      # No cache: npm here - actions/setup-node's cache lookup only
+      # supports paths relative to $GITHUB_WORKSPACE, which stays empty now
+      # that the checkout happens elsewhere (see the clone step above).
+      # Pure speed optimization, irrelevant to the reproducible-build goal.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.19.0'
+      - run: npm ci
+
+      # Matches F-Droid's buildserver's OpenJDK 21, for the same
+      # byte-identical-build reason as the Node version above.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # apksigner and aapt (used below in "Verify artefacts") live in the
+      # Android SDK's build-tools, which is not on PATH by default.
+      - name: Configure Android toolchain
+        run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "$BUILD_TOOLS" >> "$GITHUB_PATH"
+
+      # F-Droid's buildserver installs both of these NDK versions during its
+      # own build, even though nothing in node_modules explicitly requests
+      # 27.0.12077973 (every module's build.gradle defers to the same
+      # shared version catalog default, 27.1.12297006) - this workflow only
+      # ever installed the one AGP auto-resolves for that default. Mirroring
+      # the buildserver's actual installed set directly, since the trigger
+      # for the second one isn't traceable from available logs.
+      - name: Install both NDK versions F-Droid's buildserver installs
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort -V | tail -1)
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install "ndk;27.0.12077973" "ndk;27.1.12297006"
+
+      # versionCode is a packed integer, not just the tag - see
+      # tools/compute-version.sh for the scheme and why. That script is the
+      # single source of truth for this arithmetic, shared with
+      # `make prepare-release`, which commits its output into
+      # fdroid-version.txt before tagging so F-Droid's checkupdates can read
+      # a real versionCode without needing arithmetic of its own.
+      - name: Derive version
+        id: version
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          eval "$(tools/compute-version.sh "$TAG")"
+          echo "tag=$TAG"           >> "$GITHUB_OUTPUT"
+          echo "name=$versionName"  >> "$GITHUB_OUTPUT"
+          echo "code=$versionCode"  >> "$GITHUB_OUTPUT"
+          echo "Building $TAG as versionName=$versionName versionCode=$versionCode"
+
+      # expo prebuild bakes app.json's version/android.versionCode straight
+      # into the generated build.gradle and AndroidManifest.xml, so this is
+      # the one piece of the release build that does not need a post-prebuild
+      # patch - it just needs the right input.
+      # sed, not JSON.parse/stringify: a full parse+reformat round-trip
+      # inserts versionCode wherever JS's object-key ordering happens to put
+      # it (the end of the android object), while F-Droid's own recipe
+      # (using this same sed, after a reviewer suggestion) inserts it right
+      # after "android": {. Confirmed a real, mechanical difference in the
+      # resulting app.json between this workflow and F-Droid's build -
+      # aligning them removes one more source of divergence between a
+      # reproducible-build reference APK and F-Droid's own from-source build.
+      - name: Set app.json version
+        run: |
+          sed -i -e "/\"version\"/s/1.0.0/${{ steps.version.outputs.name }}/" \
+            -e "/\"android\":\ {/a \"versionCode\":${{ steps.version.outputs.code }}," \
+            app.json
+
+      - name: Prebuild the native Android project
+        run: npx expo prebuild --platform android --no-install
+
+      # RN 0.86's own gradle-plugin hardcodes a JDK 17 toolchain requirement
+      # (jvmToolchain(17)/JavaVersion.VERSION_17 in its generated build
+      # files), which conflicts with the JDK 21 this workflow now installs
+      # to match F-Droid's buildserver (see the setup-java step above).
+      # Same patch the F-Droid recipe already carries for the same reason.
+      - name: Retarget RN's gradle-plugin JDK requirement to 21
+        run: |
+          sed -i '/jvmToolchain\|JavaVersion/s/17/21/' \
+            node_modules/@react-native/gradle-plugin/*/build.gradle.kts \
+            node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/JdkConfiguratorUtils.kt
+
+      # expo prebuild's generated build.gradle signs the "release" build
+      # type with the debug keystore by default - its own comment says as
+      # much: "Caution! In production, you need to generate your own
+      # keystore file." expo prebuild regenerates android/ from scratch
+      # every run (Continuous Native Generation), so this has to be patched
+      # here rather than hand-edited once. Anchored on the exact text of the
+      # current Expo template; asserts both anchors are found exactly once,
+      # so a future template change fails the build loudly instead of
+      # quietly shipping a debug-signed "release" APK.
+      - name: Patch release signing config
+        run: python3 tools/patch-release-signing.py
+
+      - name: Decode keystore
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KS_B64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not set. See README.md 'Signing setup'."
+            exit 1
+          fi
+          printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/keystore.jks"
+
+      - name: Build signed AAB
+        env:
+          RELEASE_STORE_FILE: ${{ runner.temp }}/keystore.jks
+          RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        working-directory: /home/vagrant/build/xyz.hub13.drivewell/android
+        run: ./gradlew bundleRelease
+
+      # Obtainium installs APKs, not bundles; bundletool flattens the AAB
+      # into one universal APK covering every ABI, signed with the same key.
+      - name: Build universal APK
+        env:
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.bundletool"
+          curl -fsSL -o "$HOME/.bundletool/bundletool.jar" \
+            "https://github.com/google/bundletool/releases/download/${BUNDLETOOL_VERSION}/bundletool-all-${BUNDLETOOL_VERSION}.jar"
+          java -jar "$HOME/.bundletool/bundletool.jar" build-apks \
+            --bundle=android/app/build/outputs/bundle/release/app-release.aab \
+            --output="$RUNNER_TEMP/app.apks" \
+            --mode=universal \
+            --ks="$RUNNER_TEMP/keystore.jks" \
+            --ks-pass="pass:$KS_PASS" \
+            --ks-key-alias="$KEY_ALIAS" \
+            --key-pass="pass:$KEY_PASS"
+          unzip -p "$RUNNER_TEMP/app.apks" universal.apk \
+            > "drivewell-${{ steps.version.outputs.tag }}.apk"
+          cp android/app/build/outputs/bundle/release/app-release.aab \
+            "drivewell-${{ steps.version.outputs.tag }}.aab"
+
+      # Assertions, not just output: a silent regression here ships a
+      # broken, over-permissioned, or wrongly-signed build to everyone
+      # running Obtainium.
+      - name: Verify universal APK
+        env:
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          tools/verify-release-apk.sh \
+            "drivewell-${{ steps.version.outputs.tag }}.apk" \
+            "${{ steps.version.outputs.code }}"
+
+      # F-Droid's own build (see fdroid/xyz.hub13.drivewell.yml) splits by
+      # ABI rather than shipping one universal APK, to cut the real per-
+      # device download roughly in half. Its reproducible-build check
+      # ("Binaries:"/per-build "binary:") verifies its from-source build is
+      # byte-identical to a reference binary via signature transplant
+      # (apksigcopier) - which only works if the reference is built the
+      # exact same way: a fresh `expo prebuild` per ABI (not a post-hoc
+      # build.gradle patch, which risks producing subtly different output),
+      # with that split's own versionCode (base * 10 + 1 for armeabi-v7a,
+      # + 2 for arm64-v8a - matching the fdroid recipe's VercodeOperation)
+      # baked in before prebuild runs, exactly like F-Droid's own build.
+      #
+      # These are published alongside the universal APK deliberately, not
+      # hidden: since GitHub Releases has no way to mark an asset "reference
+      # only", anyone can already see and download them, so they might as
+      # well be usable as smaller downloads for whoever knows their device's
+      # architecture. The universal APK stays the simple, no-judgment-call
+      # default (see README).
+      - name: Build and verify per-ABI split APKs (F-Droid reproducible-build reference)
+        env:
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BASE_CODE=${{ steps.version.outputs.code }}
+          VERSION_NAME=${{ steps.version.outputs.name }}
+          TAG=${{ steps.version.outputs.tag }}
+
+          # Same tool, same tag, F-Droid's own recipe srclibs for its side of
+          # this comparison (see fdroid/xyz.hub13.drivewell.yml's postbuild:)
+          # - apksigcopier's signature-transplant check requires both APKs'
+          # local-entry regions to land at the same byte length, which only
+          # holds if both sides apply the identical zipalign normalization.
+          RAT_DIR="$RUNNER_TEMP/reproducible-apk-tools"
+          git clone --quiet --branch v0.3.0 https://gitlab.com/fdroid/reproducible-apk-tools.git "$RAT_DIR"
+
+          build_split() {
+            ABI="$1"
+            SUFFIX="$2"
+            SPLIT_CODE=$((BASE_CODE * 10 + SUFFIX))
+            echo "::group::Building $ABI (versionCode=$SPLIT_CODE)"
+
+            # Resets app.json/package.json to their pristine committed state
+            # first - F-Droid's own build starts each Builds entry from a
+            # completely fresh checkout, so without this reset the second
+            # split build here would patch values the first split build (or
+            # the universal build, earlier in this same job) already
+            # changed, corrupting both the version-sed's match and the
+            # autolinking insert (which would otherwise duplicate).
+            git checkout -- app.json package.json
+            rm -rf android
+
+            # Same sed this workflow's own F-Droid recipe uses (after a
+            # reviewer suggestion) - not the JSON.parse/stringify version
+            # used above for the universal APK, which was confirmed to
+            # insert versionCode in a different position within the
+            # android object (JS object-key ordering puts it last; this
+            # inserts it right after "android": {, matching F-Droid exactly).
+            sed -i -e "/\"version\"/s/1.0.0/$VERSION_NAME/" \
+              -e "/\"android\":\ {/a \"versionCode\":$SPLIT_CODE," \
+              app.json
+
+            # F-Droid's recipe forces every native module to build from
+            # source rather than consume a prebuilt AAR (its own scanner
+            # policy disallows shipping prebuilt binaries) - this workflow
+            # never had that constraint, so it never applied this patch,
+            # meaning its own build could link different (prebuilt)
+            # versions of native modules than F-Droid's from-source
+            # compilation. For these reference APKs specifically, matching
+            # F-Droid's own compilation inputs matters more than build
+            # speed, so this applies the identical patch.
+            sed -i -e '1a "expo":{"autolinking":{"android":{"buildFromSource":[".*"]}}},' package.json
+
+            # The standalone "Retarget RN's gradle-plugin JDK requirement to
+            # 21" step already patched node_modules once, for the whole job -
+            # that patch persists across rm -rf android/prebuild cycles
+            # (node_modules isn't reset by the git checkout above), so it
+            # doesn't need reapplying here.
+            npx expo prebuild --platform android --no-install
+
+            # Signed externally below instead of via Gradle's signingConfig
+            # (same reasoning as F-Droid's own recipe, which deletes this
+            # same line): the reproducible-build check needs this file to be
+            # byte-identical, post-normalization, to F-Droid's own unsigned
+            # build output, and signing has to happen after that
+            # normalization or it invalidates the signature - simplest to
+            # never let Gradle sign it in the first place.
+            sed -i -e '/signingConfig /d' android/app/build.gradle
+
+            # reactNativeDevServerIp defaults to this machine's own LAN IP
+            # (@react-native/gradle-plugin's getHostIpAddress(), baked into a
+            # release resource string via resValue) - confirmed by a real
+            # diff to be the sole cause of every byte difference in
+            # resources.arsc between this workflow's build and F-Droid's:
+            # each build machine embeds its own address. Pinned to the same
+            # fixed value F-Droid's recipe now also passes.
+            (cd android && ./gradlew assembleRelease \
+              -PreactNativeArchitectures=$ABI -PreactNativeDevServerIp=localhost)
+
+            UNSIGNED=android/app/build/outputs/apk/release/app-release-unsigned.apk
+
+            mv "$UNSIGNED" "$UNSIGNED.unaligned"
+            "$RAT_DIR/zipalign.py" --page-size 16 --pad-like-apksigner --replace \
+              "$UNSIGNED.unaligned" "$UNSIGNED"
+
+            OUT="drivewell-${TAG}-${ABI}.apk"
+            apksigner sign --ks "$RUNNER_TEMP/keystore.jks" --ks-pass "pass:$KS_PASS" \
+              --ks-key-alias "$KEY_ALIAS" --key-pass "pass:$KEY_PASS" \
+              --out "$OUT" "$UNSIGNED"
+            tools/verify-release-apk.sh "$OUT" "$SPLIT_CODE" "'$ABI'"
+            echo "::endgroup::"
+          }
+
+          build_split armeabi-v7a 1
+          build_split arm64-v8a 2
+
+      # softprops/action-gh-release isn't a shell step, so it doesn't use
+      # the job's default working directory above - paths here need to be
+      # absolute.
+      - name: Publish release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          files: |
+            /home/vagrant/build/xyz.hub13.drivewell/drivewell-${{ steps.version.outputs.tag }}.apk
+            /home/vagrant/build/xyz.hub13.drivewell/drivewell-${{ steps.version.outputs.tag }}.aab
+            /home/vagrant/build/xyz.hub13.drivewell/drivewell-${{ steps.version.outputs.tag }}-armeabi-v7a.apk
+            /home/vagrant/build/xyz.hub13.drivewell/drivewell-${{ steps.version.outputs.tag }}-arm64-v8a.apk
+          generate_release_notes: true
+          prerelease: ${{ contains(steps.version.outputs.tag, '-') }}
