@@ -1,0 +1,11 @@
+Initial beta release.
+
+DriveWell scores how smoothly you drive using your phone's accelerometer — no GPS, no
+network access, nothing leaves the device. A leaf on the Drive screen greens up as your
+driving smooths out, and points accrue once it's fully green. Stats tracks your lifetime
+points, best score, total time behind the wheel, and how your last 5 drives compare to
+the 5 before them.
+
+This is a beta: the scoring thresholds are a first calibration pass based on
+accelerometer physics, not tuned against real fleets of drives yet. Feedback on how the
+score feels against your own driving is very welcome via the issue tracker.
