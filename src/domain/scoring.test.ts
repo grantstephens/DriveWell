@@ -150,6 +150,44 @@ describe('the liveness gate', () => {
     expect(e.live).toBe(true);
     expect(e.points).toBeGreaterThan(0);
   });
+
+  // The exploit LIVENESS_EPSILON alone cannot catch: a phone left mostly
+  // motionless but tapped rhythmically every couple of seconds reads as
+  // "live" under a bare amplitude check (the tap's amplitude alone clears
+  // the epsilon), yet no vehicle is involved. Real engine/road vibration is
+  // continuous — every sample carries some motion; a periodic tap is sparse
+  // — long silent stretches between brief spikes. That's a duty-cycle
+  // difference, not an amplitude one, so only a variance-based check (not a
+  // bigger epsilon) can tell them apart.
+  test('a phone tapped rhythmically to fake liveness does not earn points once past the settle window', () => {
+    const e = new SmoothnessEngine();
+    let t = 0;
+    e.push({ x: 0, y: 0, z: 1, t });
+    t += 20;
+    // A brief settle window (see POINTS_SETTLE_S) deliberately behaves like
+    // the old, unhardened gate — that's the accepted, bounded cost of
+    // needing a real duty cycle to measure before the burstiness veto means
+    // anything. Feed well past it, then check the *marginal* points earned
+    // after settling, not the total — the settle window's own payout is
+    // not the exploit under test.
+    for (let ms = 0; ms < 20_000; ms += 20) {
+      const tapping = ms % 2000 < 60; // ~3 samples of tap per 2 s cycle
+      e.push({ x: 0, y: 0, z: tapping ? 1.3 : 1, t });
+      t += 20;
+    }
+    expect(e.smoothness).toBeGreaterThanOrEqual(GREEN_THRESHOLD); // dead-banded quiet between taps
+    const settledPoints = e.points;
+
+    // 70 more seconds of the exact same rhythmic tap, entirely past the
+    // settle window — a real engine wouldn't stop qualifying after 15-20 s
+    // of itself; only sparse, bursty activity should.
+    for (let ms = 20_000; ms < 90_000; ms += 20) {
+      const tapping = ms % 2000 < 60;
+      e.push({ x: 0, y: 0, z: tapping ? 1.3 : 1, t });
+      t += 20;
+    }
+    expect(e.points).toBe(settledPoints);
+  });
 });
 
 test('a real panic-stop-grade brake still drags smoothness to 0 and stops the points', () => {

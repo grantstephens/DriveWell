@@ -120,6 +120,31 @@ const ACTIVITY_TC_S = 8;
  */
 const LIVENESS_EPSILON = 0.005;
 
+/**
+ * An amplitude threshold alone cannot tell continuous engine/road vibration
+ * apart from a phone left still and rhythmically tapped every so often —
+ * the tap's amplitude clears LIVENESS_EPSILON just fine. What actually
+ * differs is duty cycle: real vibration touches nearly every sample, a
+ * periodic tap is sparse spikes in long silent stretches. `activityPowerEma`
+ * (the EMA of activityLevel²) plus `activityEma` gives a normalized
+ * variance — variance / mean² — that stays near 0 for continuous activity
+ * and rises sharply for sparse, bursty activity, regardless of amplitude.
+ * Above this ratio, activity is judged too bursty to be a real engine.
+ */
+const ACTIVITY_BURSTINESS_LIMIT = 3;
+
+/**
+ * The burstiness ratio needs several seconds of data to mean anything — a
+ * duty cycle can't be measured faster than roughly one cycle of whatever
+ * it's measuring. Before a trip has run this long, points fall back to the
+ * plain amplitude check, same as before this gate existed. This is a
+ * deliberate, bounded gap, not an oversight: it only makes rapid, repeated
+ * short trips a (much higher-effort, self-limiting) residual exploit path,
+ * while closing the realistic one — a phone left tapped and unattended for
+ * a long stretch.
+ */
+const POINTS_SETTLE_S = 15;
+
 /** Smoothness at which the leaf counts as green and points start accruing. */
 export const GREEN_THRESHOLD = 80;
 
@@ -143,6 +168,7 @@ export class SmoothnessEngine {
   private jerkEma = 0;
   private dynEma = 0;
   private activityEma = 0;
+  private activityPowerEma = 0;
   private smoothnessWeighted = 0;
   private secondsAcc = 0;
   private pointsAcc = 0;
@@ -171,13 +197,15 @@ export class SmoothnessEngine {
     this.jerkEma += alpha * (jerk - this.jerkEma);
     this.dynEma += alpha * (sustained - this.dynEma);
 
+    const activityLevel = Math.max(jerkRaw, sustainedRaw);
     const activityAlpha = dt / (ACTIVITY_TC_S + dt);
-    this.activityEma += activityAlpha * (Math.max(jerkRaw, sustainedRaw) - this.activityEma);
+    this.activityEma += activityAlpha * (activityLevel - this.activityEma);
+    this.activityPowerEma += activityAlpha * (activityLevel * activityLevel - this.activityPowerEma);
 
     const smoothness = this.smoothnessNow();
     this.smoothnessWeighted += smoothness * dt;
     this.secondsAcc += dt;
-    if (this.live && smoothness >= GREEN_THRESHOLD) {
+    if (this.live && this.pointsEligible && smoothness >= GREEN_THRESHOLD) {
       this.pointsAcc +=
         ((smoothness - GREEN_THRESHOLD) / (100 - GREEN_THRESHOLD)) *
         POINTS_PER_SECOND *
@@ -229,6 +257,21 @@ export class SmoothnessEngine {
    */
   get live(): boolean {
     return this.activityEma >= LIVENESS_EPSILON;
+  }
+
+  /**
+   * pointsEligible is the burstiness veto on top of `live`: once a trip has
+   * run long enough for a duty cycle to mean anything, sparse rhythmic
+   * activity (a faked tap, not a running engine) stops qualifying for
+   * points even though `live` — the UI's "is this a vehicle at all" signal
+   * — stays true. See ACTIVITY_BURSTINESS_LIMIT and POINTS_SETTLE_S.
+   */
+  private get pointsEligible(): boolean {
+    if (this.secondsAcc < POINTS_SETTLE_S) return true;
+    if (this.activityEma <= 0) return true; // nothing to divide by; live() already gates true stillness
+    const variance = Math.max(0, this.activityPowerEma - this.activityEma * this.activityEma);
+    const burstiness = variance / (this.activityEma * this.activityEma);
+    return burstiness <= ACTIVITY_BURSTINESS_LIMIT;
   }
 
   private smoothnessNow(): number {

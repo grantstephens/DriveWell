@@ -1,7 +1,7 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Button, Card, Text, useTheme } from 'react-native-paper';
+import { Button, Card, Snackbar, Text, useTheme } from 'react-native-paper';
 
 import { Leaf } from '../components/Leaf';
 import { useDrive } from '../DriveContext';
@@ -35,6 +35,7 @@ export function DriveScreen() {
   const [points, setPoints] = useState(0);
   const [lastTrip, setLastTrip] = useState<Trip | null>(null);
   const [lifetimePoints, setLifetimePoints] = useState(0);
+  const [milestone, setMilestone] = useState<string | null>(null);
 
   const engineRef = useRef<SmoothnessEngine | null>(null);
   const subscriptionRef = useRef<MotionSubscription | null>(null);
@@ -75,6 +76,7 @@ export function DriveScreen() {
     setSeconds(0);
     setPoints(0);
     setLastTrip(null);
+    setMilestone(null);
     setDriving(true);
     try {
       subscriptionRef.current = await startMotion((sample) => {
@@ -109,8 +111,12 @@ export function DriveScreen() {
       score: engine.score,
       points: engine.points,
     };
+    const priorBest = computeStats(await store.trips()).bestScore;
     await store.putTrip(trip);
     setLastTrip(trip);
+    if (priorBest !== null && trip.score > priorBest) {
+      setMilestone(`New personal best — ${Math.round(trip.score)}%`);
+    }
     bump();
   }
 
@@ -155,6 +161,10 @@ export function DriveScreen() {
       >
         {driving ? 'End Drive' : 'Start Drive'}
       </Button>
+
+      <Snackbar visible={milestone !== null} onDismiss={() => setMilestone(null)} duration={3000}>
+        <Text testID="drive-milestone">{milestone}</Text>
+      </Snackbar>
     </View>
   );
 }

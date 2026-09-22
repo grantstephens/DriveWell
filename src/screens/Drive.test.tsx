@@ -143,6 +143,69 @@ function leafFill(): string {
   return screen.getByTestId('leaf-path').props.style[0].color;
 }
 
+test('beating your prior best score shows a personal-best toast', async () => {
+  // Seed one prior trip to beat.
+  await store.putTrip({
+    startedAt: '2026-01-01T00:00:00Z',
+    endedAt: '2026-01-01T00:01:00Z',
+    seconds: 60,
+    score: 50,
+    points: 10,
+  });
+
+  const motion = fakeMotion();
+  await renderDrive(store);
+  await fireEvent.press(screen.getByTestId('drive-start'));
+  await waitFor(() => expect(screen.getByTestId('drive-stop')).toBeTruthy());
+
+  // 10 s of a real, smooth drive — comfortably beats the seeded 50.
+  for (let i = 0; i <= 100; i++) {
+    motion.push({ x: 0, y: 0, z: 1 + (i % 2 === 0 ? 0.01 : -0.01), t: i * 100 });
+  }
+
+  await fireEvent.press(screen.getByTestId('drive-stop'));
+  await waitFor(() => expect(screen.getByTestId('drive-milestone')).toBeTruthy());
+  expect(screen.getByTestId('drive-milestone').props.children).toMatch(/personal best/i);
+});
+
+test('a trip that does not beat the prior best shows no toast', async () => {
+  await store.putTrip({
+    startedAt: '2026-01-01T00:00:00Z',
+    endedAt: '2026-01-01T00:01:00Z',
+    seconds: 60,
+    score: 100,
+    points: 10,
+  });
+
+  const motion = fakeMotion();
+  await renderDrive(store);
+  await fireEvent.press(screen.getByTestId('drive-start'));
+  await waitFor(() => expect(screen.getByTestId('drive-stop')).toBeTruthy());
+
+  for (let i = 0; i <= 100; i++) {
+    motion.push({ x: 0, y: 0, z: 1 + (i % 2 === 0 ? 0.01 : -0.01), t: i * 100 });
+  }
+
+  await fireEvent.press(screen.getByTestId('drive-stop'));
+  await waitFor(() => expect(screen.getByTestId('drive-start')).toBeTruthy());
+  expect(screen.queryByTestId('drive-milestone')).toBeNull();
+});
+
+test('a first-ever trip shows no personal-best toast — there is no prior record to beat', async () => {
+  const motion = fakeMotion();
+  await renderDrive(store);
+  await fireEvent.press(screen.getByTestId('drive-start'));
+  await waitFor(() => expect(screen.getByTestId('drive-stop')).toBeTruthy());
+
+  for (let i = 0; i <= 100; i++) {
+    motion.push({ x: 0, y: 0, z: 1 + (i % 2 === 0 ? 0.01 : -0.01), t: i * 100 });
+  }
+
+  await fireEvent.press(screen.getByTestId('drive-stop'));
+  await waitFor(() => expect(screen.getByTestId('drive-start')).toBeTruthy());
+  expect(screen.queryByTestId('drive-milestone')).toBeNull();
+});
+
 test('the leaf turns brown as the drive gets rougher', async () => {
   const motion = fakeMotion();
   await renderDrive(store);
