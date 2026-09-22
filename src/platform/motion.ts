@@ -26,9 +26,11 @@ export interface MotionSubscription {
 
 /**
  * startMotion begins delivering accelerometer samples to onSample at the
- * scoring sample rate (~10 Hz — fast enough to catch a 0.5 g braking ramp,
- * slow enough to be kind to the battery). It rejects if no accelerometer is
- * available.
+ * scoring sample rate (~50 Hz — fast enough that domain/scoring.ts's own
+ * low-pass pre-filter can meaningfully reject aliased engine/road vibration,
+ * which would otherwise fold down into false jerk at a slower rate; still
+ * kind to the battery for a screen that is only ever live while driving). It
+ * rejects if no accelerometer is available.
  */
 export declare function startMotion(
   onSample: (sample: MotionSample) => void,

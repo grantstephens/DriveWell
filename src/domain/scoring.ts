@@ -7,13 +7,29 @@
  * gravity needs no filtering step — only *dynamic* acceleration (braking,
  * accelerating, swerving, bumps) moves m away from 1 g.
  *
- * Two signals are extracted from m, both exponentially smoothed so a single
- * pothole spike damps out over seconds rather than zeroing the score:
+ * v1 of this engine computed jerk directly from consecutive raw samples and
+ * collapsed to 0 during ordinary, careful driving. The cause: a phone in a
+ * moving car — even resting on a seat, let alone dash-mounted — picks up
+ * engine and road vibration in the tens-of-Hz range, well above anything a
+ * human driving maneuver produces (real braking/cornering/throttle inputs
+ * unfold over roughly half a second to two seconds, i.e. well under 2 Hz).
+ * Sampled at ~10-20 Hz, that vibration is badly undersampled: it aliases into
+ * what looks like violent sample-to-sample jerk, exactly the failure mode
+ * this engine is supposed to detect. v2 fixes this at the root — the
+ * standard DSP answer to "real signal is slow, noise is fast, and I can't
+ * sample fast enough to resolve the noise cleanly": low-pass the magnitude
+ * *before* differencing it, then apply a small dead-band on top for whatever
+ * the filter doesn't fully remove.
  *
- * - jerk: |Δm| / Δt (g/s) — how violently acceleration is *changing*. Rises
- *   on abrupt braking, throttle stabs, swerves, and bumps.
- * - sustained: |m − 1 g| — steady-state dynamic acceleration. A long hard
- *   corner or a foot resting on the brake shows low jerk but high sustained.
+ * Two signals are extracted from the filtered magnitude, both further
+ * exponentially smoothed so a single pothole damps out over seconds rather
+ * than zeroing the score:
+ *
+ * - jerk: |Δfiltered| / Δt (g/s) — how violently acceleration is *changing*.
+ *   Rises on abrupt braking, throttle stabs, swerves, and sustained bumps.
+ * - sustained: |filtered − 1 g| — steady-state dynamic acceleration. A long
+ *   hard corner or a foot resting on the brake shows low jerk but high
+ *   sustained.
  *
  * roughness combines them (sustained is scaled to g/s-equivalents), and
  * smoothness is the linear falloff from 100 at rest to 0 at BROWN_ROUGHNESS.
@@ -23,10 +39,14 @@
  * smoothness 100. Sitting at a traffic light scores 100 and racks up points:
  * that is deliberate, stillness is smooth.
  *
- * The constants below are first-pass calibration from accelerometer physics
- * (hard braking ≈ 0.5 g over ≈ 1 s; gentle city driving ≈ 0.05-0.15 g/s
- * jerk), not from on-road telemetry — expect to tune them against real
- * drives. They live here, and only here, so tuning is a one-file change.
+ * The constants below — including the v2 filter and dead-band — were derived
+ * against synthetic accelerometer-noise models (aliased engine/road
+ * vibration at realistic amplitudes) and synthetic braking/cornering events,
+ * not real on-road telemetry. They are calibrated so ordinary driving on a
+ * merely bumpy road stays comfortably green while genuinely harsh braking or
+ * cornering still visibly — and, if sustained, fully — tanks the score.
+ * Expect to retune against real drives; they live here, and only here, so
+ * that stays a one-file change.
  */
 
 /** One accelerometer reading. x/y/z in g units; t is epoch milliseconds. */
@@ -37,14 +57,28 @@ export interface AccelSample {
   t: number;
 }
 
-/** EMA time constant, seconds. ~3 s: a single spike decays in a few seconds. */
+/**
+ * Low-pass time constant applied to the raw magnitude before differencing,
+ * seconds. ~1 Hz cutoff: strongly attenuates engine/road vibration (tens of
+ * Hz, aliased or not) while barely touching real driving-force changes,
+ * which unfold over roughly half a second or slower.
+ */
+const SIGNAL_TC_S = 0.15;
+
+/** EMA time constant, seconds, applied to jerk/sustained themselves. */
 const EMA_TC_S = 3;
 
-/** How many g/s of sustained |m−1g| equals 1 g/s of jerk, penalty-wise. */
-const SUSTAINED_WEIGHT = 4;
+/** Residual filtered jerk below this (g/s) is sensor/mount noise, not driving. */
+const JERK_FLOOR = 0.03;
+
+/** Residual filtered sustained offset below this (g) is sensor/mount noise. */
+const SUSTAINED_FLOOR = 0.02;
+
+/** How many g/s of sustained offset equals 1 g/s of jerk, penalty-wise. */
+const SUSTAINED_WEIGHT = 3;
 
 /** roughness at and above which smoothness is 0. */
-const BROWN_ROUGHNESS = 1.2;
+const BROWN_ROUGHNESS = 2.0;
 
 /** Smoothness at which the leaf counts as green and points start accruing. */
 export const GREEN_THRESHOLD = 80;
@@ -64,7 +98,7 @@ const GRAVITY_G = 1;
  * which is what makes the whole thing testable against synthetic streams.
  */
 export class SmoothnessEngine {
-  private lastMag: number | null = null;
+  private filteredMag: number | null = null;
   private lastT = 0;
   private jerkEma = 0;
   private dynEma = 0;
@@ -75,16 +109,23 @@ export class SmoothnessEngine {
   /** push feeds one sample. Samples with non-increasing t are ignored. */
   push(s: AccelSample): void {
     const mag = Math.hypot(s.x, s.y, s.z);
-    if (this.lastMag === null) {
-      this.lastMag = mag;
+    if (this.filteredMag === null) {
+      this.filteredMag = mag;
       this.lastT = s.t;
       return; // no Δt yet — nothing to differentiate
     }
     const dt = (s.t - this.lastT) / 1000;
     if (dt <= 0) return;
 
-    const jerk = Math.abs(mag - this.lastMag) / dt;
-    const sustained = Math.abs(mag - GRAVITY_G);
+    const prevFiltered = this.filteredMag;
+    const filterAlpha = dt / (SIGNAL_TC_S + dt);
+    this.filteredMag = prevFiltered + filterAlpha * (mag - prevFiltered);
+
+    const jerkRaw = Math.abs(this.filteredMag - prevFiltered) / dt;
+    const sustainedRaw = Math.abs(this.filteredMag - GRAVITY_G);
+    const jerk = Math.max(0, jerkRaw - JERK_FLOOR);
+    const sustained = Math.max(0, sustainedRaw - SUSTAINED_FLOOR);
+
     const alpha = dt / (EMA_TC_S + dt);
     this.jerkEma += alpha * (jerk - this.jerkEma);
     this.dynEma += alpha * (sustained - this.dynEma);
@@ -99,7 +140,6 @@ export class SmoothnessEngine {
         dt;
     }
 
-    this.lastMag = mag;
     this.lastT = s.t;
   }
 

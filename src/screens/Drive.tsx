@@ -114,7 +114,7 @@ export function DriveScreen() {
   return (
     <View style={styles.screen} testID="drive-screen">
       <View style={styles.leafArea}>
-        <Leaf color={leafColor(smoothness)} size={220} />
+        <Leaf color={leafColor(smoothness)} smoothness={smoothness} size={220} />
         <Text style={styles.smoothness} testID="drive-smoothness">
           {driving ? `${smoothness}%` : 'Ready'}
         </Text>

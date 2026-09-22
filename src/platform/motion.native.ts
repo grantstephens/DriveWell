@@ -2,8 +2,13 @@ import { Accelerometer } from 'expo-sensors';
 
 import type { MotionSample, MotionSubscription } from './motion';
 
-/** ~10 Hz: catches a 0.5 g braking ramp, kind to the battery. */
-const SAMPLE_INTERVAL_MS = 100;
+/**
+ * ~50 Hz. Faster than domain/scoring.ts strictly needs for real driving
+ * events, but sampling this fast is what lets its low-pass pre-filter
+ * actually reject engine/road vibration (tens of Hz) instead of aliasing it
+ * into noise indistinguishable from real jerk.
+ */
+const SAMPLE_INTERVAL_MS = 20;
 
 export async function startMotion(
   onSample: (sample: MotionSample) => void,

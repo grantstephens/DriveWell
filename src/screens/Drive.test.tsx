@@ -124,19 +124,29 @@ test('a missing accelerometer surfaces a notification instead of crashing', asyn
   expect(screen.getByTestId('drive-start')).toBeTruthy();
 });
 
+/** MaterialCommunityIcons folds its `color` prop into style[0].color, not a
+ * literal `color` prop on the rendered element. */
+function leafFill(): string {
+  return screen.getByTestId('leaf-path').props.style[0].color;
+}
+
 test('the leaf turns brown as the drive gets rougher', async () => {
   const motion = fakeMotion();
   await renderDrive(store);
   await fireEvent.press(screen.getByTestId('drive-start'));
   await waitFor(() => expect(screen.getByTestId('drive-stop')).toBeTruthy());
 
-  const greenFill = screen.getByTestId('leaf-path').props.fill;
+  const greenFill = leafFill();
 
-  // A violent oscillation should drag the leaf toward brown.
-  for (let i = 0; i <= 20; i++) {
-    motion.push({ x: i % 2 === 0 ? 1.6 : 0.4, y: 0, z: 0, t: i * 100 });
+  // A realistic panic-stop-grade brake (1 g ramping in over 1 s, then held)
+  // should drag the leaf toward brown.
+  for (let i = 0; i <= 10; i++) {
+    motion.push({ x: 1 + 1.0 * (i / 10), y: 0, z: 0, t: i * 100 });
+  }
+  for (let i = 11; i <= 30; i++) {
+    motion.push({ x: 2, y: 0, z: 0, t: i * 100 });
   }
   await waitFor(() => {
-    expect(screen.getByTestId('leaf-path').props.fill).not.toBe(greenFill);
+    expect(leafFill()).not.toBe(greenFill);
   });
 });
