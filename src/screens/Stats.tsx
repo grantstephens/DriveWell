@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { Card, Text, useTheme } from 'react-native-paper';
 
 import { useDrive } from '../DriveContext';
 import { formatHoursMinutes } from '../domain/duration';
 import { leafColor } from '../domain/leaf';
 import { computeStats, type DriveStats } from '../domain/stats';
 import type { Trip } from '../domain/trip';
-import { useTheme } from '../ThemeContext';
 import type { Theme } from '../theme';
 
 const EMPTY_STATS: DriveStats = {
@@ -58,7 +58,10 @@ export function StatsScreen() {
   if (stats.totalTrips === 0) {
     return (
       <View style={styles.empty} testID="stats-empty">
-        <Text style={styles.emptyText}>
+        <Text
+          variant="bodyLarge"
+          style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center' }}
+        >
           No drives recorded yet. Start a drive from the leaf tab to see your stats here.
         </Text>
       </View>
@@ -70,28 +73,22 @@ export function StatsScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.grid}>
-        <Metric label="Lifetime points" value={String(stats.totalPoints)} theme={theme} />
-        <Metric label="Best drive" value={`${Math.round(stats.bestScore!)}%`} theme={theme} />
-        <Metric
-          label="Average score"
-          value={`${Math.round(stats.averageScore!)}%`}
-          theme={theme}
-        />
-        <Metric label="Total drives" value={String(stats.totalTrips)} theme={theme} />
-        <Metric
-          label="Time behind the wheel"
-          value={formatHoursMinutes(stats.totalSeconds)}
-          theme={theme}
-        />
+        <Metric label="Lifetime points" value={String(stats.totalPoints)} />
+        <Metric label="Best drive" value={`${Math.round(stats.bestScore!)}%`} />
+        <Metric label="Average score" value={`${Math.round(stats.averageScore!)}%`} />
+        <Metric label="Total drives" value={String(stats.totalTrips)} />
+        <Metric label="Time behind the wheel" value={formatHoursMinutes(stats.totalSeconds)} />
       </View>
 
       {stats.improvement !== null && (
-        <Text style={styles.improvement} testID="stats-improvement">
-          {improvementText(stats.improvement)}
-        </Text>
+        <Card testID="stats-improvement">
+          <Card.Content>
+            <Text variant="bodyMedium">{improvementText(stats.improvement)}</Text>
+          </Card.Content>
+        </Card>
       )}
 
-      <Text style={styles.chartTitle}>Recent drives</Text>
+      <Text variant="titleMedium">Recent drives</Text>
       <View style={styles.chart} testID="stats-chart">
         {chartTrips.map((trip) => (
           <View key={trip.startedAt} style={styles.barTrack}>
@@ -108,34 +105,34 @@ export function StatsScreen() {
   );
 }
 
-function Metric({ label, value, theme }: { label: string; value: string; theme: Theme }) {
-  const styles = createStyles(theme);
+function Metric({ label, value }: { label: string; value: string }) {
+  const theme = useTheme();
   return (
-    <View style={styles.metric}>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
-    </View>
+    <Card style={metricCardStyle} mode="contained">
+      <Card.Content>
+        <Text variant="displaySmall">{value}</Text>
+        <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+          {label}
+        </Text>
+      </Card.Content>
+    </Card>
   );
 }
 
+const metricCardStyle = { width: '40%' as const };
+
 function createStyles(theme: Theme) {
   return StyleSheet.create({
-    screen: { flex: 1, backgroundColor: theme.background },
+    screen: { flex: 1, backgroundColor: theme.colors.background },
     content: { padding: 24, gap: 24 },
     empty: {
       flex: 1,
-      backgroundColor: theme.background,
+      backgroundColor: theme.colors.background,
       alignItems: 'center',
       justifyContent: 'center',
       padding: 32,
     },
-    emptyText: { color: theme.textMuted, fontSize: 16, textAlign: 'center' },
     grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 20 },
-    metric: { width: '40%' },
-    metricValue: { fontSize: 24, fontWeight: '700', color: theme.text },
-    metricLabel: { fontSize: 13, color: theme.textMuted, marginTop: 2 },
-    improvement: { fontSize: 15, color: theme.text, backgroundColor: theme.surface, padding: 12, borderRadius: 10 },
-    chartTitle: { fontSize: 15, fontWeight: '700', color: theme.text },
     chart: {
       flexDirection: 'row',
       alignItems: 'flex-end',

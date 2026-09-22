@@ -1,11 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { PaperProvider } from 'react-native-paper';
 
 import { DriveProvider } from '../DriveContext';
 import type { Store } from '../domain/store';
 import { openNodeSqlite } from '../storage/nodeSqlite';
 import { SqliteStore } from '../storage/SqliteStore';
-import { ThemeProvider } from '../ThemeContext';
+import { lightTheme } from '../theme';
 import { DriveScreen } from './Drive';
 
 jest.mock('../platform/motion');
@@ -41,11 +42,11 @@ function fakeMotion() {
 
 async function renderDrive(store: Store) {
   const view = render(
-    <ThemeProvider>
+    <PaperProvider theme={lightTheme}>
       <DriveProvider store={store}>
         <DriveScreen />
       </DriveProvider>
-    </ThemeProvider>,
+    </PaperProvider>,
   );
   await waitFor(() => expect(screen.getByTestId('drive-screen')).toBeTruthy());
   return view;

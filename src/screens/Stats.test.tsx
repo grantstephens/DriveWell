@@ -1,12 +1,13 @@
 import { render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { PaperProvider } from 'react-native-paper';
 
 import { DriveProvider } from '../DriveContext';
 import type { Trip } from '../domain/trip';
 import type { Store } from '../domain/store';
 import { openNodeSqlite } from '../storage/nodeSqlite';
 import { SqliteStore } from '../storage/SqliteStore';
-import { ThemeProvider } from '../ThemeContext';
+import { lightTheme } from '../theme';
 import { improvementText, StatsScreen } from './Stats';
 
 function trip(startedAt: string, score: number, points: number, seconds = 600): Trip {
@@ -15,11 +16,11 @@ function trip(startedAt: string, score: number, points: number, seconds = 600): 
 
 async function renderStats(store: Store) {
   return render(
-    <ThemeProvider>
+    <PaperProvider theme={lightTheme}>
       <DriveProvider store={store}>
         <StatsScreen />
       </DriveProvider>
-    </ThemeProvider>,
+    </PaperProvider>
   );
 }
 

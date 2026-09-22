@@ -1,6 +1,7 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Button, Card, Text, useTheme } from 'react-native-paper';
 
 import { Leaf } from '../components/Leaf';
 import { useDrive } from '../DriveContext';
@@ -12,7 +13,6 @@ import { formatTimestamp } from '../domain/timestamp';
 import { MIN_TRIP_SECONDS, type Trip } from '../domain/trip';
 import { notify } from '../platform/confirm';
 import { startMotion, type MotionSubscription } from '../platform/motion';
-import { useTheme } from '../ThemeContext';
 import type { Theme } from '../theme';
 
 /** The tag expo-keep-awake groups this screen's lock under. */
@@ -118,11 +118,11 @@ export function DriveScreen() {
     <View style={styles.screen} testID="drive-screen">
       <View style={styles.leafArea}>
         <Leaf
-          color={driving && !live ? theme.textMuted : leafColor(smoothness)}
+          color={driving && !live ? theme.colors.onSurfaceVariant : leafColor(smoothness)}
           smoothness={driving && !live ? 0 : smoothness}
           size={220}
         />
-        <Text style={styles.smoothness} testID="drive-smoothness">
+        <Text variant="headlineMedium" testID="drive-smoothness">
           {!driving ? 'Ready' : !live ? 'Detecting movement…' : `${smoothness}%`}
         </Text>
       </View>
@@ -145,13 +145,16 @@ export function DriveScreen() {
         </View>
       )}
 
-      <Pressable
+      <Button
+        mode="contained"
         testID={driving ? 'drive-stop' : 'drive-start'}
         onPress={() => void (driving ? stop() : start())}
-        style={[styles.button, driving ? styles.buttonStop : styles.buttonStart]}
+        buttonColor={driving ? theme.colors.error : undefined}
+        style={styles.button}
+        contentStyle={styles.buttonContent}
       >
-        <Text style={styles.buttonLabel}>{driving ? 'End Drive' : 'Start Drive'}</Text>
-      </Pressable>
+        {driving ? 'End Drive' : 'Start Drive'}
+      </Button>
     </View>
   );
 }
@@ -159,10 +162,14 @@ export function DriveScreen() {
 function Stat({ label, value, theme }: { label: string; value: string; theme: Theme }) {
   const styles = createStyles(theme);
   return (
-    <View style={styles.stat}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
+    <Card style={styles.stat}>
+      <Card.Content style={styles.statContent}>
+        <Text variant="headlineSmall">{value}</Text>
+        <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }}>
+          {label}
+        </Text>
+      </Card.Content>
+    </Card>
   );
 }
 
@@ -170,26 +177,20 @@ function createStyles(theme: Theme) {
   return StyleSheet.create({
     screen: {
       flex: 1,
-      backgroundColor: theme.background,
+      backgroundColor: theme.colors.background,
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingVertical: 32,
       paddingHorizontal: 24,
     },
     leafArea: { alignItems: 'center', gap: 12, marginTop: 24 },
-    smoothness: { fontSize: 28, fontWeight: '700', color: theme.text },
-    stats: { flexDirection: 'row', gap: 32, justifyContent: 'center' },
-    stat: { alignItems: 'center' },
-    statValue: { fontSize: 20, fontWeight: '700', color: theme.text },
-    statLabel: { fontSize: 13, color: theme.textMuted, marginTop: 2 },
+    stats: { flexDirection: 'row', gap: 16, justifyContent: 'center' },
+    stat: { minWidth: 120 },
+    statContent: { alignItems: 'center' },
     button: {
       width: '100%',
-      paddingVertical: 16,
       borderRadius: 12,
-      alignItems: 'center',
     },
-    buttonStart: { backgroundColor: theme.accent },
-    buttonStop: { backgroundColor: '#B3261E' },
-    buttonLabel: { color: '#FFFFFF', fontSize: 17, fontWeight: '700' },
+    buttonContent: { paddingVertical: 8 },
   });
 }

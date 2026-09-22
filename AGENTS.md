@@ -57,16 +57,16 @@ except `App.tsx`.
 | `src/storage` | `SqliteStore` (via `expo-sqlite`/`node:sqlite`), held to a behavioural contract (`storeContract.ts`) so the device implementation can never drift from what the tests actually exercise. |
 | `src/screens` | Drive (the leaf), Stats, Settings. |
 | `src/platform` | The one thing that genuinely differs per build: the accelerometer (`motion.*`) and the confirm/alert dialog (`confirm.*`, native-only by design — there is no web target to branch on). |
-| `src/components/Leaf.tsx` | The leaf's artwork: `MaterialIcons`'s "eco" glyph, tinted by the caller, plus an SVG radial-gradient glow that intensifies with smoothness². Every color decision lives in `domain/leaf.ts` — this component only draws it. |
-| `src/theme.ts`, `src/ThemeContext.tsx` | Light/dark palettes; `ThemeProvider` follows the system color scheme only. There is no stored override — see "Deliberate simplifications" below. |
-| `App.tsx` / `DriveContext.tsx` | Store bootstrap, the error screen, and the `revision` counter every write path bumps so Stats and the Drive screen's lifetime-points readout stay in sync. |
+| `src/components/Leaf.tsx` | The leaf's artwork: `MaterialIcons`'s "eco" glyph, tinted by the caller, plus an SVG radial-gradient glow that intensifies with smoothness². Every color decision lives in `domain/leaf.ts` — this component only draws it, entirely independent of the app's own Material theme below (the leaf communicates driving quality, not brand identity). |
+| `src/theme.ts` | The whole app's Material Design 3 theme (`react-native-paper`), generated from one seed color — the leaf's own lush-green stop — via `@material/material-color-utilities` (Google's pure-JS MD3 color algorithm; deliberately not a package that bundles native code for *system* wallpaper theming, which this app has no use for). Every screen reads colors through `useTheme()` from `react-native-paper`, not a custom context — there is no `ThemeContext.tsx`. |
+| `App.tsx` / `DriveContext.tsx` | `PaperProvider` + a Material 3 bottom navigation bar (`BottomNavigation.Bar`, the documented react-native-paper/react-navigation integration pattern) bootstrapped from `useColorScheme()` directly — no stored override, see "Deliberate simplifications" below. Also: store bootstrap, the error screen, and the `revision` counter every write path bumps so Stats and the Drive screen's lifetime-points readout stay in sync. |
 
 ### Deliberate simplifications versus the ReminDiary template this was adapted from
 
 1. **No web target.** The accelerometer is the entire premise; a browser tab on a
    laptop has nothing meaningful to score. This removes `react-native-web`, the
    `IndexedDbStore` backend, and any `Platform.OS === 'web'` branching from the
-   `openStore`/`ThemeProvider` pattern ReminDiary uses.
+   `openStore` pattern ReminDiary uses.
 2. **No stored theme preference.** The app follows the system color scheme and nothing
    else — one fewer persisted file, one fewer settings control, for a screen you glance
    at while driving rather than sit inside.
@@ -158,6 +158,12 @@ except `App.tsx`.
   copies only own enumerable fields, not prototype methods, so a `SqliteStore`'s other
   methods come back `undefined` at runtime while type-checking fine. Bind explicitly per
   method instead.
+- **`@material/material-color-utilities` is ESM-only.** `jest-expo`'s default
+  `transformIgnorePatterns` doesn't cover it, so any screen test importing
+  `../theme` (for `lightTheme`, e.g. to wrap a render in `PaperProvider`) fails
+  at require time with "Must use import to load ES Module" unless the
+  `screens` project's `transformIgnorePatterns` in `jest.config.js`
+  allowlists it — already done; don't remove that entry.
 
 ## Testing
 

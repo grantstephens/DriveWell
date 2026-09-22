@@ -1,83 +1,143 @@
-import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { NavigationContainer, type Theme as NavigationTheme } from '@react-navigation/native';
+import {
+  CommonActions,
+  DarkTheme as NavigationDarkTheme,
+  DefaultTheme as NavigationDefaultTheme,
+  NavigationContainer,
+} from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import {
+  ActivityIndicator,
+  adaptNavigationTheme,
+  BottomNavigation,
+  PaperProvider,
+  Text,
+} from 'react-native-paper';
 
 import { DriveProvider } from './DriveContext';
+import type { Store } from './domain/store';
 import { DriveScreen } from './screens/Drive';
 import { SettingsScreen } from './screens/Settings';
 import { StatsScreen } from './screens/Stats';
-import type { Store } from './domain/store';
 import { openStore } from './storage/openStore';
-import { ThemeProvider, useTheme } from './ThemeContext';
-import type { Theme } from './theme';
-
-/** navigationTheme adapts our tokens to react-navigation's own Theme shape. */
-function navigationTheme(theme: Theme): NavigationTheme {
-  return {
-    dark: theme.dark,
-    colors: {
-      primary: theme.accent,
-      background: theme.background,
-      card: theme.surface,
-      text: theme.text,
-      border: theme.border,
-      notification: theme.accent,
-    },
-    fonts: {
-      regular: { fontFamily: 'System', fontWeight: '400' },
-      medium: { fontFamily: 'System', fontWeight: '500' },
-      bold: { fontFamily: 'System', fontWeight: '700' },
-      heavy: { fontFamily: 'System', fontWeight: '900' },
-    },
-  };
-}
+import { darkTheme, lightTheme, type Theme } from './theme';
 
 type TabName = 'Drive' | 'Stats' | 'Settings';
 
 const Tab = createBottomTabNavigator();
 
-const TAB_ICONS: Record<TabName, keyof typeof Ionicons.glyphMap> = {
-  Drive: 'leaf-outline',
-  Stats: 'stats-chart-outline',
-  Settings: 'settings-outline',
+const TAB_ICONS: Record<TabName, keyof typeof MaterialCommunityIcons.glyphMap> = {
+  Drive: 'leaf',
+  Stats: 'chart-bar',
+  Settings: 'cog-outline',
 };
+
+/**
+ * Bridges our generated Material 3 palettes into react-navigation's own
+ * Theme shape (colors *and* fonts) — computed once, not per render, since
+ * neither palette ever changes at runtime.
+ */
+const { LightTheme: NAV_LIGHT_THEME, DarkTheme: NAV_DARK_THEME } = adaptNavigationTheme({
+  reactNavigationLight: NavigationDefaultTheme,
+  reactNavigationDark: NavigationDarkTheme,
+  materialLight: lightTheme,
+  materialDark: darkTheme,
+});
 
 /**
  * Screens render with headerShown: false, so nothing else pads the status bar
  * / camera-cutout area away from a screen's own content.
  */
-function withTopInset<P extends object>(Screen: React.ComponentType<P>) {
-  return function ScreenWithTopInset(props: P) {
-    const theme = useTheme();
+function withTopInset(Screen: React.ComponentType, theme: Theme) {
+  return function ScreenWithTopInset() {
     return (
       <SafeAreaView
         edges={['top']}
-        style={[styles.safeArea, { backgroundColor: theme.background }]}
+        style={[styles.safeArea, { backgroundColor: theme.colors.background }]}
       >
-        <Screen {...props} />
+        <Screen />
       </SafeAreaView>
     );
   };
 }
 
-export default function App() {
+/**
+ * A Material 3 bottom navigation bar (elevated surface, pill-shaped active
+ * indicator, ripple) in place of react-navigation's own plain tab bar — the
+ * documented react-native-paper + react-navigation integration pattern.
+ * `tabBarIcon` still comes from each Tab.Screen's own options; this only
+ * changes how the bar around it is drawn.
+ */
+function MaterialTabBar({ navigation, state, descriptors, insets }: BottomTabBarProps) {
   return (
-    <ThemeProvider>
-      <AppInner />
-    </ThemeProvider>
+    <BottomNavigation.Bar
+      navigationState={state}
+      safeAreaInsets={insets}
+      onTabPress={({ route, preventDefault }) => {
+        const event = navigation.emit({
+          type: 'tabPress',
+          target: route.key,
+          canPreventDefault: true,
+        });
+        if (event.defaultPrevented) {
+          preventDefault();
+        } else {
+          navigation.dispatch({
+            ...CommonActions.navigate(route.name, route.params),
+            target: state.key,
+          });
+        }
+      }}
+      renderIcon={({ route, focused, color }) => {
+        const { options } = descriptors[route.key]!;
+        return typeof options.tabBarIcon === 'function'
+          ? options.tabBarIcon({ focused, color, size: 24 })
+          : null;
+      }}
+      getLabelText={({ route }) => {
+        const { options } = descriptors[route.key]!;
+        if (typeof options.tabBarLabel === 'string') return options.tabBarLabel;
+        return options.title ?? route.name;
+      }}
+      getTestID={({ route }) => `tab-${route.name}`}
+    />
   );
 }
 
-/**
- * Split from App so it can call useTheme() — the provider it needs has to be
- * an ancestor, not itself.
- */
-function AppInner() {
-  const theme = useTheme();
+function Tabs({ theme }: { theme: Theme }) {
+  return (
+    <Tab.Navigator
+      screenOptions={{ headerShown: false }}
+      tabBar={(props) => <MaterialTabBar {...props} />}
+    >
+      {(Object.keys(TAB_ICONS) as TabName[]).map((name) => (
+        <Tab.Screen
+          key={name}
+          name={name}
+          component={withTopInset(
+            { Drive: DriveScreen, Stats: StatsScreen, Settings: SettingsScreen }[name],
+            theme,
+          )}
+          options={{
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name={TAB_ICONS[name]} color={color} size={size} />
+            ),
+          }}
+        />
+      ))}
+    </Tab.Navigator>
+  );
+}
+
+export default function App() {
+  const scheme = useColorScheme();
+  const theme = scheme === 'dark' ? darkTheme : lightTheme;
+  const navTheme = scheme === 'dark' ? NAV_DARK_THEME : NAV_LIGHT_THEME;
   const [store, setStore] = useState<Store | null>(null);
   const [failure, setFailure] = useState<Error | null>(null);
 
@@ -102,74 +162,44 @@ function AppInner() {
     };
   }, []);
 
-  const statusBarStyle = theme.dark ? 'light' : 'dark';
-
-  if (failure !== null) {
-    return (
-      <>
-        <StatusBar style={statusBarStyle} />
-        <ErrorScreen error={failure} theme={theme} />
-      </>
-    );
-  }
-  if (store === null) {
-    return (
-      <>
-        <StatusBar style={statusBarStyle} />
-        <View style={[styles.centre, { backgroundColor: theme.background }]}>
-          <ActivityIndicator color={theme.accent} />
-        </View>
-      </>
-    );
-  }
-
   return (
-    <SafeAreaProvider>
-      <StatusBar style={statusBarStyle} />
-      <DriveProvider store={store}>
-        <NavigationContainer theme={navigationTheme(theme)}>
-          <Tabs />
-        </NavigationContainer>
-      </DriveProvider>
-    </SafeAreaProvider>
-  );
-}
-
-function Tabs() {
-  return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarIcon: ({ color, size }) => (
-          <Ionicons name={TAB_ICONS[route.name as TabName]} color={color} size={size} />
-        ),
-      })}
+    <PaperProvider
+      theme={theme}
+      settings={{ icon: (props) => <MaterialCommunityIcons {...props} /> }}
     >
-      <Tab.Screen
-        name="Drive"
-        component={withTopInset(DriveScreen)}
-        options={{ tabBarButtonTestID: 'tab-Drive' }}
-      />
-      <Tab.Screen
-        name="Stats"
-        component={withTopInset(StatsScreen)}
-        options={{ tabBarButtonTestID: 'tab-Stats' }}
-      />
-      <Tab.Screen
-        name="Settings"
-        component={withTopInset(SettingsScreen)}
-        options={{ tabBarButtonTestID: 'tab-Settings' }}
-      />
-    </Tab.Navigator>
+      <StatusBar style={theme.dark ? 'light' : 'dark'} />
+      {failure !== null ? (
+        <ErrorScreen error={failure} theme={theme} />
+      ) : store === null ? (
+        <View style={[styles.centre, { backgroundColor: theme.colors.background }]}>
+          <ActivityIndicator color={theme.colors.primary} />
+        </View>
+      ) : (
+        <SafeAreaProvider>
+          <DriveProvider store={store}>
+            <NavigationContainer theme={navTheme}>
+              <Tabs theme={theme} />
+            </NavigationContainer>
+          </DriveProvider>
+        </SafeAreaProvider>
+      )}
+    </PaperProvider>
   );
 }
 
 function ErrorScreen({ error, theme }: { error: Error; theme: Theme }) {
   return (
-    <View style={[styles.centre, { backgroundColor: theme.background }]}>
-      <Text style={[styles.errorTitle, { color: theme.text }]}>Could not open your data</Text>
-      <Text style={[styles.errorBody, { color: theme.text }]}>{error.message}</Text>
-      <Text style={[styles.errorBody, { color: theme.textMuted }]}>
+    <View style={[styles.centre, { backgroundColor: theme.colors.background }]}>
+      <Text variant="titleLarge" style={styles.errorTitle}>
+        Could not open your data
+      </Text>
+      <Text variant="bodyMedium" style={styles.errorBody}>
+        {error.message}
+      </Text>
+      <Text
+        variant="bodyMedium"
+        style={[styles.errorBody, { color: theme.colors.onSurfaceVariant }]}
+      >
         Your driving history is still on this device. Restarting the app is usually enough.
       </Text>
     </View>
@@ -179,6 +209,6 @@ function ErrorScreen({ error, theme }: { error: Error; theme: Theme }) {
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   centre: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  errorTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' },
+  errorTitle: { marginBottom: 12, textAlign: 'center' },
   errorBody: { textAlign: 'center', marginBottom: 8 },
 });

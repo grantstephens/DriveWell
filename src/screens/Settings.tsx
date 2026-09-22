@@ -1,9 +1,9 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { Button, Card, Text, useTheme } from 'react-native-paper';
 
 import { useDrive } from '../DriveContext';
 import { confirm, notify } from '../platform/confirm';
-import { useTheme } from '../ThemeContext';
 import type { Theme } from '../theme';
 
 /**
@@ -28,50 +28,48 @@ export function SettingsScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <View style={styles.section}>
-        <Text style={styles.heading}>How scoring works</Text>
-        <Text style={styles.body}>
-          DriveWell watches your phone's accelerometer while you drive. Sudden braking,
-          hard acceleration, and sharp cornering turn the leaf brown; a steady, gentle
-          touch turns it green. Once the leaf is fully green, you start earning points —
-          smooth driving is efficient driving.
-        </Text>
-      </View>
+      <Card>
+        <Card.Content style={styles.cardContent}>
+          <Text variant="titleMedium">How scoring works</Text>
+          <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+            DriveWell watches your phone's accelerometer while you drive. Sudden braking,
+            hard acceleration, and sharp cornering turn the leaf brown; a steady, gentle
+            touch turns it green. Once the leaf is fully green, you start earning points —
+            smooth driving is efficient driving.
+          </Text>
+        </Card.Content>
+      </Card>
 
-      <View style={styles.section}>
-        <Text style={styles.heading}>Your data</Text>
-        <Text style={styles.body}>
-          Every trip is stored only on this device. DriveWell makes no network requests
-          and shares nothing.
-        </Text>
-      </View>
+      <Card>
+        <Card.Content style={styles.cardContent}>
+          <Text variant="titleMedium">Your data</Text>
+          <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+            Every trip is stored only on this device. DriveWell makes no network requests
+            and shares nothing.
+          </Text>
+        </Card.Content>
+      </Card>
 
-      <Pressable
-        testID="settings-delete"
-        onPress={() => void handleDelete()}
-        style={styles.deleteButton}
-      >
-        <Text style={styles.deleteLabel}>Delete driving history</Text>
-      </Pressable>
+      <View style={styles.deleteWrapper}>
+        <Button
+          testID="settings-delete"
+          mode="outlined"
+          textColor={theme.colors.error}
+          style={{ borderColor: theme.colors.error }}
+          onPress={() => void handleDelete()}
+        >
+          Delete driving history
+        </Button>
+      </View>
     </ScrollView>
   );
 }
 
 function createStyles(theme: Theme) {
   return StyleSheet.create({
-    screen: { flex: 1, backgroundColor: theme.background },
+    screen: { flex: 1, backgroundColor: theme.colors.background },
     content: { padding: 24, gap: 24 },
-    section: { gap: 8 },
-    heading: { fontSize: 16, fontWeight: '700', color: theme.text },
-    body: { fontSize: 14, color: theme.textMuted, lineHeight: 20 },
-    deleteButton: {
-      borderWidth: 1,
-      borderColor: '#B3261E',
-      borderRadius: 12,
-      paddingVertical: 14,
-      alignItems: 'center',
-      marginTop: 8,
-    },
-    deleteLabel: { color: '#B3261E', fontSize: 15, fontWeight: '700' },
+    cardContent: { gap: 8 },
+    deleteWrapper: { marginTop: 8 },
   });
 }

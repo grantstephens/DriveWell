@@ -1,11 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { PaperProvider } from 'react-native-paper';
 
 import { DriveProvider } from '../DriveContext';
 import type { Store } from '../domain/store';
 import { openNodeSqlite } from '../storage/nodeSqlite';
 import { SqliteStore } from '../storage/SqliteStore';
-import { ThemeProvider } from '../ThemeContext';
+import { lightTheme } from '../theme';
 import { SettingsScreen } from './Settings';
 
 jest.mock('../platform/confirm');
@@ -35,11 +36,11 @@ afterEach(async () => {
 
 async function renderSettings() {
   return render(
-    <ThemeProvider>
+    <PaperProvider theme={lightTheme}>
       <DriveProvider store={store}>
         <SettingsScreen />
       </DriveProvider>
-    </ThemeProvider>,
+    </PaperProvider>
   );
 }
 
