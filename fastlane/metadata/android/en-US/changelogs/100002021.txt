@@ -1,0 +1,18 @@
+Recalibrated scoring, a proper leaf, and a fix for a real gaming loophole.
+
+- Scoring was too sensitive: real-world engine and road vibration was being
+  read as harsh driving, dragging the score to 0 even while driving
+  carefully. The engine now low-pass filters the signal before judging it,
+  which rejects that vibration while still catching genuinely harsh
+  braking or cornering.
+- The leaf is now built from a proper detailed icon instead of a rough
+  hand-drawn shape, with a soft glow that builds as your driving smooths
+  out.
+- Closed a loophole where leaving the phone completely still (e.g. on a
+  table) could rack up points without actually driving anywhere. Points
+  now require proof the phone is in an actual moving, running vehicle —
+  a stationary phone scores as smooth but earns nothing.
+
+Still a beta: scoring constants are calibrated against synthetic models,
+not a fleet of real drives. Feedback on how it feels against your own
+driving is very welcome via the issue tracker.
