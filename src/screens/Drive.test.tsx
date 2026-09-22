@@ -136,7 +136,7 @@ test('a missing accelerometer surfaces a notification instead of crashing', asyn
   expect(screen.getByTestId('drive-start')).toBeTruthy();
 });
 
-/** MaterialCommunityIcons folds its `color` prop into style[0].color, not a
+/** @expo/vector-icons folds its `color` prop into style[0].color, not a
  * literal `color` prop on the rendered element. */
 function leafFill(): string {
   return screen.getByTestId('leaf-path').props.style[0].color;

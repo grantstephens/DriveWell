@@ -57,7 +57,7 @@ except `App.tsx`.
 | `src/storage` | `SqliteStore` (via `expo-sqlite`/`node:sqlite`), held to a behavioural contract (`storeContract.ts`) so the device implementation can never drift from what the tests actually exercise. |
 | `src/screens` | Drive (the leaf), Stats, Settings. |
 | `src/platform` | The one thing that genuinely differs per build: the accelerometer (`motion.*`) and the confirm/alert dialog (`confirm.*`, native-only by design — there is no web target to branch on). |
-| `src/components/Leaf.tsx` | The leaf's artwork: `MaterialCommunityIcons`'s "leaf-maple" glyph, tinted by the caller, plus an SVG radial-gradient glow that intensifies with smoothness². Every color decision lives in `domain/leaf.ts` — this component only draws it. |
+| `src/components/Leaf.tsx` | The leaf's artwork: `MaterialIcons`'s "eco" glyph, tinted by the caller, plus an SVG radial-gradient glow that intensifies with smoothness². Every color decision lives in `domain/leaf.ts` — this component only draws it. |
 | `src/theme.ts`, `src/ThemeContext.tsx` | Light/dark palettes; `ThemeProvider` follows the system color scheme only. There is no stored override — see "Deliberate simplifications" below. |
 | `App.tsx` / `DriveContext.tsx` | Store bootstrap, the error screen, and the `revision` counter every write path bumps so Stats and the Drive screen's lifetime-points readout stay in sync. |
 

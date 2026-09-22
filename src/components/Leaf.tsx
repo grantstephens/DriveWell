@@ -1,15 +1,15 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 
 /**
- * The leaf. `MaterialCommunityIcons`'s "leaf-maple" glyph is the artwork —
- * a real, detailed silhouette (five lobes, branching veins) rather than a
- * hand-drawn approximation — tinted by the caller's color. domain/leaf.ts
- * still owns what color a given smoothness maps to; this component only
- * draws it, plus a soft radial glow behind it that grows with smoothness so
- * a fully green leaf visibly radiates rather than just changing color.
+ * The leaf. `MaterialIcons`'s "eco" glyph is the artwork — a real, detailed
+ * silhouette rather than a hand-drawn approximation — tinted by the
+ * caller's color. domain/leaf.ts still owns what color a given smoothness
+ * maps to; this component only draws it, plus a soft radial glow behind it
+ * that grows with smoothness so a fully green leaf visibly radiates rather
+ * than just changing color.
  *
  * The glow uses `smoothness²` rather than smoothness directly: barely
  * visible through the middle of the range, so it reads as a payoff that
@@ -50,7 +50,7 @@ export function Leaf({
           <Circle cx={glowSize / 2} cy={glowSize / 2} r={glowSize / 2} fill="url(#glow)" />
         </Svg>
       )}
-      <MaterialCommunityIcons name="leaf-maple" size={size} color={color} testID="leaf-path" />
+      <MaterialIcons name="eco" size={size} color={color} testID="leaf-path" />
     </View>
   );
 }
