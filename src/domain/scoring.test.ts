@@ -1,4 +1,4 @@
-import { GREEN_THRESHOLD, SmoothnessEngine, type AccelSample } from './scoring';
+import { GREEN_THRESHOLD, SmoothnessEngine } from './scoring';
 
 const HZ = 10; // a representative sample rate; the engine's math is dt-driven, not rate-pinned
 const STEP_MS = 1000 / HZ;
