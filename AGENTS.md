@@ -57,7 +57,7 @@ except `App.tsx`.
 | `src/storage` | `SqliteStore` (via `expo-sqlite`/`node:sqlite`), held to a behavioural contract (`storeContract.ts`) so the device implementation can never drift from what the tests actually exercise. |
 | `src/screens` | Drive (the leaf), Stats, Settings. |
 | `src/platform` | The one thing that genuinely differs per build: the accelerometer (`motion.*`) and the confirm/alert dialog (`confirm.*`, native-only by design — there is no web target to branch on). |
-| `src/components/Leaf.tsx` | The leaf's SVG silhouette. Purely presentational — every color decision lives in `domain/leaf.ts`. |
+| `src/components/Leaf.tsx` | The leaf's artwork: `MaterialCommunityIcons`'s "leaf-maple" glyph, tinted by the caller, plus an SVG radial-gradient glow that intensifies with smoothness². Every color decision lives in `domain/leaf.ts` — this component only draws it. |
 | `src/theme.ts`, `src/ThemeContext.tsx` | Light/dark palettes; `ThemeProvider` follows the system color scheme only. There is no stored override — see "Deliberate simplifications" below. |
 | `App.tsx` / `DriveContext.tsx` | Store bootstrap, the error screen, and the `revision` counter every write path bumps so Stats and the Drive screen's lifetime-points readout stay in sync. |
 
@@ -83,11 +83,32 @@ except `App.tsx`.
   the accelerometer reading's total magnitude (`Math.hypot(x, y, z)`), never a single
   axis, specifically so it doesn't matter where in the car the phone is mounted. Do not
   reintroduce axis-specific logic without re-deriving this property.
-- **Both smoothness signals are exponentially smoothed, never read raw.** A single
-  pothole must not zero a trip's score; only sustained roughness should. See the doc
-  comment at the top of `domain/scoring.ts` for the exact reasoning and the calibration
-  constants — they are first-pass physics-based guesses, not tuned against real drives,
-  and are deliberately concentrated in that one file so tuning stays a one-file change.
+- **The raw magnitude is low-pass filtered *before* differencing, never read
+  directly.** A phone in a moving car picks up engine/road vibration in the
+  tens-of-Hz range; sampled at ~10-50 Hz that aliases into false jerk
+  indistinguishable from real harsh driving (a real regression — see
+  `domain/scoring.ts`'s module doc for the full story). Filtering the
+  magnitude before differencing, plus a small noise-floor dead-band on top,
+  is what lets ordinary road/engine vibration stay green while genuinely
+  harsh events still tank the score. The calibration constants are
+  first-pass physics-based guesses, not tuned against real drives, and are
+  deliberately concentrated in that one file so tuning stays a one-file
+  change.
+- **Points require `SmoothnessEngine.live`, not just a green smoothness.**
+  An accelerometer cannot distinguish "parked" from "cruising at a constant
+  velocity" — both are zero acceleration (Newton's first law), so without a
+  separate check a phone left motionless on a table is indistinguishable
+  from the smoothest drive imaginable, and would earn points for doing
+  nothing. `live` is a much-faster-tripping, much-lower-threshold rolling
+  EMA of the *raw* (unfloored) jerk/sustained signal — the same "any real
+  vehicle vibrates" fact the roughness score spends its effort filtering
+  *out* is exactly what proves a phone is actually in a moving, running
+  vehicle. `smoothness`/`score` stay true regardless of `live` ("no
+  roughness was detected" is honest even when nothing is proven); only
+  `points` and the Drive screen's own display gate on it. See the "the
+  liveness gate" describe block in `scoring.test.ts` for the exact
+  behavior, including the bounded grace period that keeps an ordinary
+  traffic stop from pausing points.
 - **`score`, `smoothness`, and `points` getters are read-only derived state.** Nothing
   outside `SmoothnessEngine` mutates the running averages; a screen just pushes samples
   and reads the getters after each one.

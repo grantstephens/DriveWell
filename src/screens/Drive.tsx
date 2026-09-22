@@ -30,6 +30,7 @@ export function DriveScreen() {
 
   const [driving, setDriving] = useState(false);
   const [smoothness, setSmoothness] = useState(100);
+  const [live, setLive] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [points, setPoints] = useState(0);
   const [lastTrip, setLastTrip] = useState<Trip | null>(null);
@@ -70,6 +71,7 @@ export function DriveScreen() {
     engineRef.current = engine;
     startedAtRef.current = formatTimestamp(new Date());
     setSmoothness(100);
+    setLive(false);
     setSeconds(0);
     setPoints(0);
     setLastTrip(null);
@@ -78,6 +80,7 @@ export function DriveScreen() {
       subscriptionRef.current = await startMotion((sample) => {
         engine.push(sample);
         setSmoothness(engine.smoothness);
+        setLive(engine.live);
         setSeconds(engine.seconds);
         setPoints(engine.points);
       });
@@ -114,9 +117,13 @@ export function DriveScreen() {
   return (
     <View style={styles.screen} testID="drive-screen">
       <View style={styles.leafArea}>
-        <Leaf color={leafColor(smoothness)} smoothness={smoothness} size={220} />
+        <Leaf
+          color={driving && !live ? theme.textMuted : leafColor(smoothness)}
+          smoothness={driving && !live ? 0 : smoothness}
+          size={220}
+        />
         <Text style={styles.smoothness} testID="drive-smoothness">
-          {driving ? `${smoothness}%` : 'Ready'}
+          {!driving ? 'Ready' : !live ? 'Detecting movement…' : `${smoothness}%`}
         </Text>
       </View>
 

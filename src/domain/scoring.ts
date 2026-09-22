@@ -36,17 +36,39 @@
  *
  * Points: once smoothness reaches GREEN_THRESHOLD the leaf is "green" and
  * points accrue proportionally — 0/s at the threshold, POINTS_PER_SECOND at
- * smoothness 100. Sitting at a traffic light scores 100 and racks up points:
- * that is deliberate, stillness is smooth.
+ * smoothness 100. Sitting at a genuine traffic light scores 100 and racks
+ * up points: that is deliberate, stillness *while driving* is smooth.
  *
- * The constants below — including the v2 filter and dead-band — were derived
- * against synthetic accelerometer-noise models (aliased engine/road
- * vibration at realistic amplitudes) and synthetic braking/cornering events,
- * not real on-road telemetry. They are calibrated so ordinary driving on a
- * merely bumpy road stays comfortably green while genuinely harsh braking or
- * cornering still visibly — and, if sustained, fully — tanks the score.
- * Expect to retune against real drives; they live here, and only here, so
- * that stays a one-file change.
+ * But an accelerometer cannot tell "parked" from "cruising at a perfectly
+ * constant velocity" apart — both read as zero acceleration, a direct
+ * consequence of Newton's first law, not a bug to filter around. Without a
+ * second check, that makes a phone left motionless on a table
+ * indistinguishable from the smoothest drive imaginable, and points would
+ * accrue for doing nothing at all. `live` closes that gap: a rolling EMA of
+ * the *raw*, unfloored jerk/sustained signal — the same "any real vehicle
+ * vibrates" fact that section above spends so much effort filtering *out*
+ * of the roughness score is exactly what proves a phone is actually in a
+ * running, moving vehicle in the first place. A truly inert phone (sensor
+ * noise only, many times smaller than the smallest real vehicle vibration)
+ * never crosses LIVENESS_EPSILON; any real vehicle crosses it within a
+ * sample or two. Points require both `live` and a green smoothness — a
+ * table never earns points, no matter how long it sits there, and a phone
+ * abandoned mid-trip stops earning once ACTIVITY_TC_S's rolling window
+ * decays past the threshold (a bounded grace period, not a hard cutoff, so
+ * an ordinary traffic stop with the engine idling doesn't get penalized for
+ * the same stillness that a table produces). The one case this cannot
+ * catch — sitting in a parked car with the engine running — is the same
+ * physical-limitation trade a speedometer-free, GPS-free design accepts
+ * everywhere else in this app.
+ *
+ * The constants below — including the v2 filter, dead-band, and liveness
+ * gate — were derived against synthetic accelerometer-noise models (aliased
+ * engine/road vibration at realistic amplitudes) and synthetic
+ * braking/cornering events, not real on-road telemetry. They are calibrated
+ * so ordinary driving on a merely bumpy road stays comfortably green while
+ * genuinely harsh braking or cornering still visibly — and, if sustained,
+ * fully — tanks the score. Expect to retune against real drives; they live
+ * here, and only here, so that stays a one-file change.
  */
 
 /** One accelerometer reading. x/y/z in g units; t is epoch milliseconds. */
@@ -80,6 +102,24 @@ const SUSTAINED_WEIGHT = 3;
 /** roughness at and above which smoothness is 0. */
 const BROWN_ROUGHNESS = 2.0;
 
+/**
+ * Rolling time constant, seconds, for the liveness-activity EMA. Long
+ * enough to ride through an ordinary traffic stop with the engine idling
+ * (~30 s of grace) without pausing points; short enough that a phone
+ * genuinely abandoned mid-trip stops earning within under a minute rather
+ * than indefinitely.
+ */
+const ACTIVITY_TC_S = 8;
+
+/**
+ * The liveness-activity EMA must clear this (g or g/s) before points
+ * accrue. Set far below any real vehicle's vibration (which clears it
+ * within a sample or two of an engine actually running) and far above bare
+ * sensor noise (which never does) — the gap between those two is large
+ * enough that the exact value only matters at the margins.
+ */
+const LIVENESS_EPSILON = 0.005;
+
 /** Smoothness at which the leaf counts as green and points start accruing. */
 export const GREEN_THRESHOLD = 80;
 
@@ -102,6 +142,7 @@ export class SmoothnessEngine {
   private lastT = 0;
   private jerkEma = 0;
   private dynEma = 0;
+  private activityEma = 0;
   private smoothnessWeighted = 0;
   private secondsAcc = 0;
   private pointsAcc = 0;
@@ -130,10 +171,13 @@ export class SmoothnessEngine {
     this.jerkEma += alpha * (jerk - this.jerkEma);
     this.dynEma += alpha * (sustained - this.dynEma);
 
+    const activityAlpha = dt / (ACTIVITY_TC_S + dt);
+    this.activityEma += activityAlpha * (Math.max(jerkRaw, sustainedRaw) - this.activityEma);
+
     const smoothness = this.smoothnessNow();
     this.smoothnessWeighted += smoothness * dt;
     this.secondsAcc += dt;
-    if (smoothness >= GREEN_THRESHOLD) {
+    if (this.live && smoothness >= GREEN_THRESHOLD) {
       this.pointsAcc +=
         ((smoothness - GREEN_THRESHOLD) / (100 - GREEN_THRESHOLD)) *
         POINTS_PER_SECOND *
@@ -173,6 +217,18 @@ export class SmoothnessEngine {
    */
   get points(): number {
     return Math.round(this.pointsAcc);
+  }
+
+  /**
+   * live is true once the rolling activity signal proves this is an actual
+   * running, moving vehicle rather than a phone left motionless somewhere.
+   * Points require this in addition to a green smoothness; the leaf's own
+   * color and the trip's score do not — they answer "how rough was
+   * whatever motion happened", which stays a true statement (there was
+   * none) even while this is false.
+   */
+  get live(): boolean {
+    return this.activityEma >= LIVENESS_EPSILON;
   }
 
   private smoothnessNow(): number {
