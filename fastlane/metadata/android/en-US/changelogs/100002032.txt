@@ -1,0 +1,14 @@
+Closed a scoring loophole and added a personal-best callout.
+
+- The liveness check that gates points could be fooled by a phone tapped
+  every couple of seconds rather than one actually mounted in a running
+  vehicle — the tap's strength alone was enough to pass. Points now also
+  require the activity to look like continuous engine/road vibration
+  rather than sparse, rhythmic taps; a phone left tapped and unattended
+  no longer earns points.
+- Ending a drive that beats every one of your prior trip scores now shows
+  a "new personal best" toast.
+
+Still a beta: scoring constants remain a first calibration pass, not
+tuned against real fleets of drives. Feedback on how it feels against
+your own driving is very welcome via the issue tracker.
