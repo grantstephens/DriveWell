@@ -1,0 +1,13 @@
+A diagnostic build, not a feature release.
+
+Real motorway driving was pinning the smoothness score around 70% even
+with no harsh braking, acceleration, or cornering happening — ambient
+road/engine vibration at speed is being misread as rough driving. Rather
+than guess at another fix, this build adds a temporary debug capture:
+after ending a drive, an "Export debug log" button shares the raw
+accelerometer data and the scoring engine's internal state, so the real
+fix can be calibrated against an actual drive instead of a synthetic
+model.
+
+This debug tooling is temporary and will be removed once the real
+scoring fix ships. Not a build to keep long-term.
