@@ -278,4 +278,20 @@ export class SmoothnessEngine {
     const roughness = this.jerkEma + SUSTAINED_WEIGHT * this.dynEma;
     return Math.min(100, Math.max(0, 100 * (1 - roughness / BROWN_ROUGHNESS)));
   }
+
+  /**
+   * TEMPORARY — diagnostic-only, for calibrating against a real motorway
+   * drive (see debug/capture.ts). Delete this getter, and the whole
+   * debug/ directory, once that diagnosis is done.
+   */
+  get debugSnapshot() {
+    return {
+      filteredMag: this.filteredMag,
+      jerkEma: this.jerkEma,
+      dynEma: this.dynEma,
+      activityEma: this.activityEma,
+      smoothness: this.smoothnessNow(),
+      live: this.live,
+    };
+  }
 }
