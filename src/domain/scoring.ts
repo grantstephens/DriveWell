@@ -122,15 +122,15 @@ const JERK_BASELINE_TC_S = 20;
 /**
  * Rolling time constant, seconds, for the liveness-activity EMA. Long
  * enough to ride through an ordinary traffic stop with the engine idling
- * (~30 s of grace) without pausing points; short enough that a phone
- * genuinely abandoned mid-trip stops earning within under a minute rather
- * than indefinitely.
+ * (~30 s of grace) without pausing score accumulation; short enough that a
+ * phone genuinely abandoned mid-trip stops contributing within under a
+ * minute rather than indefinitely.
  */
 const ACTIVITY_TC_S = 8;
 
 /**
- * The liveness-activity EMA must clear this (g or g/s) before points
- * accrue. Set far below any real vehicle's vibration (which clears it
+ * The liveness-activity EMA must clear this (g or g/s) before score
+ * accumulates. Set far below any real vehicle's vibration (which clears it
  * within a sample or two of an engine actually running) and far above bare
  * sensor noise (which never does) — the gap between those two is large
  * enough that the exact value only matters at the margins.
@@ -209,14 +209,23 @@ export class SmoothnessEngine {
     this.jerkEma += alpha * (jerk - this.jerkEma);
     this.dynEma += alpha * (sustained - this.dynEma);
 
-    if (this.jerkBaseline === null) this.jerkBaseline = this.jerkEma;
-    const baselineAlpha = dt / (JERK_BASELINE_TC_S + dt);
-    this.jerkBaseline += baselineAlpha * (this.jerkEma - this.jerkBaseline);
-
     const activityLevel = Math.max(jerkRaw, sustainedRaw);
     const activityAlpha = dt / (ACTIVITY_TC_S + dt);
     this.activityEma += activityAlpha * (activityLevel - this.activityEma);
     this.activityPowerEma += activityAlpha * (activityLevel * activityLevel - this.activityPowerEma);
+
+    if (this.jerkBaseline === null) {
+      this.jerkBaseline = this.jerkEma;
+    } else if (this.live) {
+      // Frozen while not live: a genuinely silent stop (a red light, engine
+      // off) must not erase what the baseline learned about the current
+      // road — decaying it here would reintroduce this file's whole reason
+      // for existing on the very next stretch of driving, for any
+      // stop-and-go trip. Resuming re-teaches it fast anyway (see the
+      // "recovers toward 100" test), so freezing costs nothing real.
+      const baselineAlpha = dt / (JERK_BASELINE_TC_S + dt);
+      this.jerkBaseline += baselineAlpha * (this.jerkEma - this.jerkBaseline);
+    }
 
     const smoothness = this.smoothnessNow();
     this.secondsAcc += dt;
@@ -249,9 +258,19 @@ export class SmoothnessEngine {
     return Math.min(100, this.smoothnessWeighted / this.liveSecondsAcc);
   }
 
-  /** seconds is the accumulated driving time. */
+  /** seconds is the accumulated driving time — total wall-clock, including any non-live stretches. */
   get seconds(): number {
     return this.secondsAcc;
+  }
+
+  /**
+   * liveSeconds is the subset of `seconds` proven live (see `score`) — a
+   * trip that's all idle stillness (a phone left on a table) has `seconds`
+   * but no `liveSeconds`, which is what a caller should check before
+   * deciding a trip is worth saving at all, not just whether it was long.
+   */
+  get liveSeconds(): number {
+    return this.liveSecondsAcc;
   }
 
   /**

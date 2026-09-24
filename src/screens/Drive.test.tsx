@@ -152,6 +152,27 @@ test('a trip shorter than the minimum is discarded, not saved', async () => {
   await expect(store.trips()).resolves.toEqual([]);
 });
 
+// Found in final review: a phone left on a table for a while racks up
+// wall-clock seconds (past MIN_TRIP_SECONDS) without ever proving a
+// vehicle was involved. It must not be saved — and especially must not be
+// saved as a suspicious, unearned 100% now that score requires liveness.
+test('a long-enough-by-the-clock but never-live "drive" is discarded, not saved as a false 100%', async () => {
+  const motion = fakeMotion();
+  await renderDrive(store);
+  await fireEvent.press(screen.getByTestId('drive-start'));
+  await waitFor(() => expect(screen.getByTestId('drive-stop')).toBeTruthy());
+
+  // Dead-still for a full minute — never crosses the liveness bar.
+  for (let i = 0; i <= 600; i++) {
+    motion.push({ x: 0, y: 0, z: 1, t: i * 100 });
+  }
+
+  await fireEvent.press(screen.getByTestId('drive-stop'));
+  await waitFor(() => expect(screen.getByTestId('drive-start')).toBeTruthy());
+
+  await expect(store.trips()).resolves.toEqual([]);
+});
+
 test('a missing accelerometer surfaces a notification instead of crashing', async () => {
   startMotion.mockRejectedValue(new Error('No accelerometer on this device'));
   await renderDrive(store);

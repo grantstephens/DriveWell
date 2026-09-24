@@ -2,9 +2,8 @@
 
 Drive with this app open and it scores how smooth you are, using nothing but your
 phone's accelerometer. A leaf on screen turns from dormant brown through yellow to
-lush green as your driving smooths out; once it's fully green, you start racking up
-points. Smooth driving is efficient driving — this is a nudge toward more of it, with a
-little gamification to make the nudge stick.
+lush green as your driving smooths out, alongside a live percentage score. Smooth
+driving is efficient driving — this is a nudge toward more of it.
 
 Everything happens on the device. No account, no sync, no GPS, no network requests at
 all — DriveWell has nothing to send and nowhere to send it.
@@ -51,11 +50,10 @@ app is signed with the project's own key rather than distributed through Play.
 Three screens:
 
 - **Drive** — the leaf. Tap **Start Drive** before you pull off; the leaf tracks your
-  smoothness live. Tap **End Drive** when you arrive to save the trip and see your
-  score and points.
-- **Stats** — lifetime points, your best drive, your average, total time behind the
-  wheel, and a "your last 5 drives vs. the 5 before" trend so you can see whether you're
-  actually getting smoother.
+  smoothness live. Tap **End Drive** when you arrive to save the trip and see its score.
+- **Stats** — your lifetime average, best drive, total time behind the wheel, and a
+  "your last 5 drives vs. the 5 before" trend so you can see whether you're actually
+  getting smoother.
 - **Settings** — a plain-language explanation of how scoring works, and the one
   destructive action: delete your driving history.
 
@@ -66,8 +64,11 @@ doesn't matter where in the car the phone is mounted. Two things move that magni
 away from a resting 1 g: **jerk** (how fast acceleration is changing — hard braking,
 throttle stabs, swerves, potholes) and **sustained** acceleration (steady-state, like a
 long hard corner). Both are smoothed with a multi-second exponential average, so a
-single pothole doesn't tank your score — but a whole rough drive will. Once the leaf
-crosses into green, points accrue for as long as you stay there.
+single pothole doesn't tank your score — but a whole rough drive will. Jerk is scored
+against a slow adaptive baseline rather than a fixed floor, so persistent ambient road
+vibration settles in as "normal" for that drive instead of permanently capping your
+score — only genuine harsh events, and driving-force changes that outpace the baseline,
+still tank it.
 
 The constants behind that mapping are first-pass calibration from accelerometer
 physics, not tuned against real fleets of drives — see the comments in

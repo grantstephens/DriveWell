@@ -272,11 +272,43 @@ test('score reflects only live driving time, not a long idle stretch afterward',
   expect(e.score).toBeCloseTo(scoreBeforeIdle, 6);
 });
 
+// Found in final review: the baseline decayed just as fast on the way down
+// as it learned on the way up, so a genuinely silent stop (a red light,
+// engine off at idle) erased what it had learned about the current road —
+// reintroducing the exact motorway bug this task fixes on the very next
+// stretch of driving, for any stop-and-go trip.
+test('the jerk baseline survives a stop instead of resetting, so the motorway fix does not undo itself at every red light', () => {
+  const ambient = (i: number) => ({ x: 0, y: 0, z: 1 + (i % 2 === 0 ? 0.18 : -0.18) });
+  const e = new SmoothnessEngine();
+  feed(e, 0, 120 * HZ + 1, ambient); // settle on a vibration-heavy road, as in the recovery test above
+  expect(e.smoothness).toBeGreaterThanOrEqual(93);
+
+  // Stop long enough to go non-live (well past the liveness grace period —
+  // 60 s matches the existing "abandoning the phone" test's proven margin).
+  feed(e, 120100, 60 * HZ + 1, still({ x: 0, y: 0, z: 1 }));
+  expect(e.live).toBe(false);
+
+  // Resume the same road. If the baseline reset to the stop's near-zero
+  // level, this reads as a "new" harsh event all over again.
+  feed(e, 180200, HZ + 1, ambient);
+  expect(e.smoothness).toBeGreaterThanOrEqual(90);
+});
+
 test('a trip with no live samples yet scores a perfect 100, not NaN', () => {
   const e = new SmoothnessEngine();
   feed(e, 0, 30 * HZ + 1, still({ x: 0, y: 0, z: 1 }));
   expect(e.live).toBe(false);
   expect(e.score).toBe(100);
+});
+
+test('liveSeconds counts only proven-live time, unlike seconds', () => {
+  const e = new SmoothnessEngine();
+  feed(e, 0, 10 * HZ + 1, driving({ x: 0, y: 0, z: 1 })); // 10 s live
+  feed(e, 10100, 60 * HZ + 1, still({ x: 0, y: 0, z: 1 })); // 60 s dead-still, well past the grace period
+  expect(e.live).toBe(false);
+  expect(e.seconds).toBeCloseTo(70.1, 3); // total wall-clock time, unaffected
+  expect(e.liveSeconds).toBeGreaterThanOrEqual(9); // the driving portion plus grace, not the idle 60 s
+  expect(e.liveSeconds).toBeLessThan(30);
 });
 
 test('samples with non-increasing timestamps are ignored', () => {

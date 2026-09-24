@@ -1,5 +1,5 @@
 DriveWell scores how smoothly you drive using nothing but your phone's accelerometer. Harsh acceleration, braking, and cornering drag the score down, and a leaf on the home screen greens up as your driving gets smoother.
 
-It's a game against yourself: once the leaf is green, points rack up with every smooth trip, and your stats track how your driving improves over time.
+It's a game against yourself: every drive gets a percentage score, and your stats track how your driving improves over time.
 
 Everything stays on your phone. No network access, no GPS, no accounts — the sensor data never leaves the device.

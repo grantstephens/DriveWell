@@ -10,7 +10,7 @@ import { leafColor } from '../domain/leaf';
 import { SmoothnessEngine } from '../domain/scoring';
 import { computeStats } from '../domain/stats';
 import { formatTimestamp } from '../domain/timestamp';
-import { MIN_TRIP_SECONDS, type Trip } from '../domain/trip';
+import { isDriveWorthSaving, type Trip } from '../domain/trip';
 import { notify } from '../platform/confirm';
 import { startMotion, type MotionSubscription } from '../platform/motion';
 import type { Theme } from '../theme';
@@ -20,8 +20,8 @@ const KEEP_AWAKE_TAG = 'drivewell-drive';
 
 /**
  * Drive is the main screen: the leaf, live while driving, a summary once
- * stopped. Gamification lives entirely in the leaf's color and the points
- * counter — no separate "level up" ceremony to build or maintain.
+ * stopped. Gamification lives entirely in the leaf's color and the live
+ * percentage score — no separate "level up" ceremony to build or maintain.
  */
 export function DriveScreen() {
   const { store, revision, bump, startCapture } = useDrive();
@@ -101,7 +101,7 @@ export function DriveScreen() {
     const engine = engineRef.current;
     engineRef.current = null;
     setDriving(false);
-    if (!engine || engine.seconds < MIN_TRIP_SECONDS) return;
+    if (!engine || !isDriveWorthSaving(engine.seconds, engine.liveSeconds)) return;
 
     const trip: Trip = {
       startedAt: startedAtRef.current,

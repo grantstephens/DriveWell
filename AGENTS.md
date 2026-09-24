@@ -7,7 +7,7 @@ this repository.
 
 An offline driving-smoothness trainer (React Native + Expo). Drive with the app open;
 it reads the accelerometer, scores how jerky the drive is, and shows a leaf that turns
-from brown to green as the driving smooths out. Once the leaf is green, points accrue.
+from brown to green as the driving smooths out, with a percentage score shown live.
 Android is the only shipping target — there is no accelerometer to read in a browser
 tab, so unlike some sibling projects this one carries no web target, no `react-native-web`,
 and no IndexedDB storage backend.
@@ -59,7 +59,7 @@ except `App.tsx`.
 | `src/platform` | The one thing that genuinely differs per build: the accelerometer (`motion.*`) and the confirm/alert dialog (`confirm.*`, native-only by design — there is no web target to branch on). |
 | `src/components/Leaf.tsx` | The leaf's artwork: `MaterialIcons`'s "eco" glyph, tinted by the caller, plus an SVG radial-gradient glow that intensifies with smoothness². Every color decision lives in `domain/leaf.ts` — this component only draws it, entirely independent of the app's own Material theme below (the leaf communicates driving quality, not brand identity). |
 | `src/theme.ts` | The whole app's Material Design 3 theme (`react-native-paper`), generated from one seed color — the leaf's own lush-green stop — via `@material/material-color-utilities` (Google's pure-JS MD3 color algorithm; deliberately not a package that bundles native code for *system* wallpaper theming, which this app has no use for). Every screen reads colors through `useTheme()` from `react-native-paper`, not a custom context — there is no `ThemeContext.tsx`. |
-| `App.tsx` / `DriveContext.tsx` | `PaperProvider` + a Material 3 bottom navigation bar (`BottomNavigation.Bar`, the documented react-native-paper/react-navigation integration pattern) bootstrapped from `useColorScheme()` directly — no stored override, see "Deliberate simplifications" below. Also: store bootstrap, the error screen, and the `revision` counter every write path bumps so Stats and the Drive screen's lifetime-points readout stay in sync. |
+| `App.tsx` / `DriveContext.tsx` | `PaperProvider` + a Material 3 bottom navigation bar (`BottomNavigation.Bar`, the documented react-native-paper/react-navigation integration pattern) bootstrapped from `useColorScheme()` directly — no stored override, see "Deliberate simplifications" below. Also: store bootstrap, the error screen, and the `revision` counter every write path bumps so Stats and the Drive screen's lifetime-average readout stay in sync. |
 
 ### Deliberate simplifications versus the ReminDiary template this was adapted from
 
@@ -94,27 +94,50 @@ except `App.tsx`.
   first-pass physics-based guesses, not tuned against real drives, and are
   deliberately concentrated in that one file so tuning stays a one-file
   change.
-- **Points require `SmoothnessEngine.live`, not just a green smoothness.**
-  An accelerometer cannot distinguish "parked" from "cruising at a constant
-  velocity" — both are zero acceleration (Newton's first law), so without a
-  separate check a phone left motionless on a table is indistinguishable
-  from the smoothest drive imaginable, and would earn points for doing
-  nothing. `live` is a much-faster-tripping, much-lower-threshold rolling
-  EMA of the *raw* (unfloored) jerk/sustained signal — the same "any real
-  vehicle vibrates" fact the roughness score spends its effort filtering
-  *out* is exactly what proves a phone is actually in a moving, running
-  vehicle. `smoothness`/`score` stay true regardless of `live` ("no
-  roughness was detected" is honest even when nothing is proven); only
-  `points` and the Drive screen's own display gate on it. See the "the
-  liveness gate" describe block in `scoring.test.ts` for the exact
-  behavior, including the bounded grace period that keeps an ordinary
-  traffic stop from pausing points.
-- **`score`, `smoothness`, and `points` getters are read-only derived state.** Nothing
+- **`score`'s accumulation requires `SmoothnessEngine.live`, not just a low
+  roughness.** An accelerometer cannot distinguish "parked" from "cruising
+  at a constant velocity" — both are zero acceleration (Newton's first
+  law), so without a separate check a phone left motionless on a table
+  would score identically to the smoothest drive imaginable, padding a
+  rough trip's average with "perfect" idle time. `live` is a
+  much-faster-tripping, much-lower-threshold rolling EMA of the *raw*
+  (unfloored) jerk/sustained signal — the same "any real vehicle vibrates"
+  fact the roughness score spends its effort filtering *out* is exactly
+  what proves a phone is actually in a moving, running vehicle.
+  `smoothness` (the instantaneous reading) stays true regardless of `live`
+  ("no roughness was detected" is honest even when nothing is proven);
+  only `score`'s accumulation gates on it, alongside a burstiness veto once
+  a trip has run long enough (`SCORING_SETTLE_S`) that stops sparse,
+  rhythmic activity (a faked tap, not a running engine) from counting even
+  though `live` stays true. See the "the liveness gate" describe block in
+  `scoring.test.ts` for the exact behavior, including the bounded grace
+  period that keeps an ordinary traffic stop from pausing accumulation, and
+  the jerk baseline (below) freezing rather than decaying while not live.
+- **The jerk roughness signal is scored against an adaptive baseline, not
+  a fixed floor.** Real motorway vibration (measured 2.3-3.5 Hz) sits too
+  close to the driving-event frequency band for a low-pass filter alone to
+  reject it — captured highway data showed `jerkEma` sitting at a steady
+  0.4-0.5 g/s for an entire cruise, 15x `JERK_FLOOR`, with the single
+  largest real event in either capture only 40-80% above the ambient
+  floor. `JERK_BASELINE_TC_S` tracks "what's been normal for this road
+  recently" and only the excess above it counts as roughness — see
+  `domain/scoring.ts`'s module doc for the full derivation. Accepted,
+  tested tradeoff: continuously harsh driving sustained *longer* than this
+  window is gradually forgiven too; the baseline freezes (rather than
+  decaying) while not live specifically so a genuinely silent stop doesn't
+  erase what it learned and reintroduce the same motorway bug on the next
+  stretch of driving.
+- **`score` and `smoothness` getters are read-only derived state.** Nothing
   outside `SmoothnessEngine` mutates the running averages; a screen just pushes samples
   and reads the getters after each one.
-- **A trip shorter than `MIN_TRIP_SECONDS` is discarded, not saved** (`domain/trip.ts`).
-  This is deliberately part of the domain layer, not screen-level UI logic, since "was
-  this actually a drive" is a fact about the trip, not about how a button was drawn.
+- **A drive is discarded, not saved, unless it clears both `MIN_TRIP_SECONDS` of
+  wall-clock duration *and* of proven-live time** (`domain/trip.ts`'s
+  `isDriveWorthSaving`). The live-time half matters specifically because a phone left on
+  a table racks up wall-clock seconds without ever proving a vehicle was involved — it
+  must not be saved as a trip, let alone one reporting a suspicious, unearned 100% now
+  that `score` requires liveness. This is deliberately part of the domain layer, not
+  screen-level UI logic, since "was this actually a drive" is a fact about the trip, not
+  about how a button was drawn.
 - **Stats are always derived, never stored.** `computeStats(trips)` from the trip list
   alone, same rule ReminDiary's `computeStats` follows for the same reason: it rules out
   a whole class of cache-invalidation bugs.
@@ -144,12 +167,11 @@ except `App.tsx`.
   corrupts React's act bookkeeping — every later `render()` in that file then silently
   produces an **empty tree**, surfacing as confusing "element not found" failures
   unrelated to the component under test.
-- **Never compare `SmoothnessEngine.points` (or any rounded getter) across two moments
-  with strict equality when the raw accumulation is still converging.** The getter is
-  rounded for display; the true rate can be exactly right while two roundings a few
-  seconds apart land ±1 apart purely from where each side's fraction happens to fall.
-  Assert a tolerant range instead, and say why in the comment (see
-  `scoring.test.ts`'s "points accrue proportionally" test).
+- **Never compare a rounded getter (`smoothness`, `score`) across two moments with
+  strict equality when the raw accumulation is still converging.** The getter is rounded
+  for display; the true rate can be exactly right while two roundings a few seconds
+  apart land ±1 apart purely from where each side's fraction happens to fall. Assert a
+  tolerant range instead, and say why in the comment.
 - **A hand-typed unit-vector constant is not exact.** `0.577` is not `1/√3`; feeding it
   into `Math.hypot` produces a real, non-negligible magnitude error, not a floating-point
   edge case. Use `1 / Math.sqrt(3)` when a test needs an exact-magnitude diagonal
