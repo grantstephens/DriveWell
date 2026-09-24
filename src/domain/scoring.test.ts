@@ -1,4 +1,4 @@
-import { GREEN_THRESHOLD, SmoothnessEngine } from './scoring';
+import { SmoothnessEngine } from './scoring';
 
 const HZ = 10; // a representative sample rate; the engine's math is dt-driven, not rate-pinned
 const STEP_MS = 1000 / HZ;
@@ -53,13 +53,12 @@ function rampAndHold(peakG: number, rampSeconds: number) {
   };
 }
 
-test('a real, smooth drive scores 100 and racks up points at the full rate', () => {
+test('a real, smooth drive scores 100', () => {
   const e = new SmoothnessEngine();
   feed(e, 0, 10 * HZ + 1, driving({ x: 0, y: 0, z: 1 }));
   expect(e.smoothness).toBeGreaterThanOrEqual(99);
   expect(e.live).toBe(true);
   expect(e.seconds).toBeCloseTo(10, 6);
-  expect(e.points).toBeGreaterThanOrEqual(9); // ~10 s × 1 point/s, minus a touch of EMA warm-up
 });
 
 test('scoring is orientation-independent: gravity alone never penalizes', () => {
@@ -86,7 +85,7 @@ test('scoring is orientation-independent: gravity alone never penalizes', () => 
 test('realistic vibration noise degrades gracefully instead of crashing the score', () => {
   const mild = new SmoothnessEngine();
   feed(mild, 0, 30 * HZ + 1, (i) => ({ x: 1 + (i % 2 === 0 ? 0.08 : -0.08), y: 0, z: 0 }));
-  expect(mild.smoothness).toBeGreaterThanOrEqual(GREEN_THRESHOLD);
+  expect(mild.smoothness).toBeGreaterThanOrEqual(80);
 
   // Much stronger vibration (a rough idle or poor road, alternating at the
   // Nyquist limit — a worst-case pattern for any low-pass filter) degrades
@@ -95,7 +94,7 @@ test('realistic vibration noise degrades gracefully instead of crashing the scor
   const rough = new SmoothnessEngine();
   feed(rough, 0, 30 * HZ + 1, (i) => ({ x: 1 + (i % 2 === 0 ? 0.15 : -0.15), y: 0, z: 0 }));
   expect(rough.smoothness).toBeGreaterThan(30);
-  expect(rough.smoothness).toBeLessThan(GREEN_THRESHOLD);
+  expect(rough.smoothness).toBeLessThan(80);
 });
 
 // The second regression this engine exists to fix: an accelerometer cannot
@@ -103,14 +102,14 @@ test('realistic vibration noise degrades gracefully instead of crashing the scor
 // acceleration), so without a separate check, leaving a phone motionless on
 // a table is indistinguishable from the smoothest drive imaginable.
 describe('the liveness gate', () => {
-  test('a phone left motionless on a table never earns points, no matter how long', () => {
+  test('a phone left motionless on a table is never live, no matter how long', () => {
     const e = new SmoothnessEngine();
     feed(e, 0, 90 * HZ + 1, still({ x: 0, y: 0, z: 1 }));
     // Smoothness stays an honest 100 — there is genuinely no roughness — but
     // nothing this still ever proves a vehicle is actually involved.
     expect(e.smoothness).toBe(100);
     expect(e.live).toBe(false);
-    expect(e.points).toBe(0);
+    expect(e.score).toBe(100); // no live time was ever recorded
   });
 
   test('a real vehicle is recognized as live within a couple hundred milliseconds', () => {
@@ -123,32 +122,34 @@ describe('the liveness gate', () => {
     expect(e.live).toBe(true);
   });
 
-  test('abandoning the phone mid-trip stops it earning further points after a grace period', () => {
+  test("abandoning the phone mid-trip freezes score's accumulation after a grace period", () => {
     const e = new SmoothnessEngine();
     feed(e, 0, 20 * HZ + 1, driving({ x: 0, y: 0, z: 1 }));
     expect(e.live).toBe(true);
-    const pointsWhileDriving = e.points;
-    expect(pointsWhileDriving).toBeGreaterThan(0);
+    const scoreWhileDriving = e.score;
 
     // Put it down: dead silence for a full minute.
     feed(e, 20100, 60 * HZ + 1, still({ x: 0, y: 0, z: 1 }));
     expect(e.live).toBe(false);
-    const pointsAfterAbandoned = e.points;
+    const scoreAfterAbandoned = e.score;
 
-    // Another 30 s of the same silence must not add a single further point —
+    // Another 30 s of the same silence must not move the score at all —
     // the grace period, whatever it is, has to actually end.
     feed(e, 80200, 30 * HZ + 1, still({ x: 0, y: 0, z: 1 }));
-    expect(e.points).toBe(pointsAfterAbandoned);
-    expect(e.points).toBeGreaterThan(pointsWhileDriving); // the grace period paid out *something*
+    expect(e.score).toBeCloseTo(scoreAfterAbandoned, 6);
+    // The grace period's own driving-then-briefly-idle time still counted,
+    // so the two checkpoints needn't be identical, but both must reflect
+    // an actual driving trip, not the idle padding.
+    expect(scoreWhileDriving).toBeGreaterThanOrEqual(99);
   });
 
-  test('a short, genuinely silent stop does not pause points — the grace period covers it', () => {
+  test('a short, genuinely silent stop does not pause score accumulation — the grace period covers it', () => {
     const e = new SmoothnessEngine();
     feed(e, 0, 10 * HZ + 1, driving({ x: 0, y: 0, z: 1 })); // driving up to the light
     feed(e, 10100, 15 * HZ + 1, still({ x: 0, y: 0, z: 1 })); // stopped, genuinely silent, well under the grace window
     feed(e, 25300, 5 * HZ + 1, driving({ x: 0, y: 0, z: 1 })); // moving again
     expect(e.live).toBe(true);
-    expect(e.points).toBeGreaterThan(0);
+    expect(e.score).toBeGreaterThanOrEqual(99);
   });
 
   // The exploit LIVENESS_EPSILON alone cannot catch: a phone left mostly
@@ -159,24 +160,23 @@ describe('the liveness gate', () => {
   // — long silent stretches between brief spikes. That's a duty-cycle
   // difference, not an amplitude one, so only a variance-based check (not a
   // bigger epsilon) can tell them apart.
-  test('a phone tapped rhythmically to fake liveness does not earn points once past the settle window', () => {
+  test('a phone tapped rhythmically to fake liveness does not count toward score once past the settle window', () => {
     const e = new SmoothnessEngine();
     let t = 0;
     e.push({ x: 0, y: 0, z: 1, t });
     t += 20;
-    // A brief settle window (see POINTS_SETTLE_S) deliberately behaves like
+    // A brief settle window (see SCORING_SETTLE_S) deliberately behaves like
     // the old, unhardened gate — that's the accepted, bounded cost of
     // needing a real duty cycle to measure before the burstiness veto means
-    // anything. Feed well past it, then check the *marginal* points earned
-    // after settling, not the total — the settle window's own payout is
-    // not the exploit under test.
+    // anything. Feed well past it, then check the *marginal* score change
+    // after settling, not the total — the settle window's own contribution
+    // is not the exploit under test.
     for (let ms = 0; ms < 20_000; ms += 20) {
       const tapping = ms % 2000 < 60; // ~3 samples of tap per 2 s cycle
       e.push({ x: 0, y: 0, z: tapping ? 1.3 : 1, t });
       t += 20;
     }
-    expect(e.smoothness).toBeGreaterThanOrEqual(GREEN_THRESHOLD); // dead-banded quiet between taps
-    const settledPoints = e.points;
+    const settledScore = e.score;
 
     // 70 more seconds of the exact same rhythmic tap, entirely past the
     // settle window — a real engine wouldn't stop qualifying after 15-20 s
@@ -186,26 +186,18 @@ describe('the liveness gate', () => {
       e.push({ x: 0, y: 0, z: tapping ? 1.3 : 1, t });
       t += 20;
     }
-    expect(e.points).toBe(settledPoints);
+    expect(e.score).toBeCloseTo(settledScore, 6);
   });
 });
 
-test('a real panic-stop-grade brake still drags smoothness to 0 and stops the points', () => {
+test('a real panic-stop-grade brake still drags smoothness to 0', () => {
   const e = new SmoothnessEngine();
   // 5 s smooth driving, then a 1 g deceleration ramping in over 1 s and
   // held — a near-maximum-grip panic stop, not just firm braking.
   feed(e, 0, 5 * HZ + 1, driving({ x: 0, y: 0, z: 1 }));
   feed(e, 5100, HZ + 1, rampAndHold(1.0, 1));
   feed(e, 6200, 5 * HZ + 1, () => ({ x: 2, y: 0, z: 0 }));
-
   expect(e.smoothness).toBe(0);
-  const pointsAtZero = e.points;
-
-  // Another 10 s held at the same deceleration: smoothness stays 0, points
-  // stay frozen.
-  feed(e, 11400, 10 * HZ + 1, () => ({ x: 2, y: 0, z: 0 }));
-  expect(e.smoothness).toBe(0);
-  expect(e.points).toBe(pointsAtZero);
 });
 
 test('smoothness recovers gradually after a harsh event ends, not instantly', () => {
@@ -218,14 +210,14 @@ test('smoothness recovers gradually after a harsh event ends, not instantly', ()
   feed(e, 11400, HZ + 1, driving({ x: 0, y: 0, z: 1 }));
   // One second of clean driving does not forgive a hard brake: the EMA
   // (3 s time constant) is still carrying most of it.
-  expect(e.smoothness).toBeLessThan(GREEN_THRESHOLD);
+  expect(e.smoothness).toBeLessThan(80);
 
   // …but ~20 s of clean driving fully rehabilitates the leaf.
   feed(e, 12500, 20 * HZ + 1, driving({ x: 0, y: 0, z: 1 }));
   expect(e.smoothness).toBeGreaterThanOrEqual(99);
 });
 
-test('score is the time-weighted mean, not the final reading', () => {
+test('score is the time-weighted mean over live time, not the final reading', () => {
   const e = new SmoothnessEngine();
   // 5 s perfect, then a panic-stop-grade brake held for 4 s — smoothness
   // bottoms out at 0 well before the end, but the trip average reflects
@@ -239,41 +231,55 @@ test('score is the time-weighted mean, not the final reading', () => {
   expect(e.score).toBeLessThan(74);
 });
 
-test('points accrue proportionally between the green threshold and 100', () => {
+test('score reflects only live driving time, not a long idle stretch afterward', () => {
   const e = new SmoothnessEngine();
-  // A steady sustained offset chosen (empirically, including the dither's
-  // own small contribution to jerk) to hold smoothness at exactly 90 while
-  // dithered enough to stay live → points at (90−80)/20 = 0.5/s once settled.
-  const steadyG = 0.08;
-  feed(e, 0, 30 * HZ + 1, driving({ x: 1 + steadyG, y: 0, z: 0 }));
-  expect(e.smoothness).toBe(90);
+  // 5 s smooth driving, a panic-stop-grade brake held for 4 s, then a brief
+  // recovery back to ordinary driving — releasing the brake before parking,
+  // not jumping the raw signal straight from a 2 g hold to dead-still (which
+  // would itself register as one more abrupt jerk transient and confound
+  // what this test is actually checking).
+  feed(e, 0, 5 * HZ + 1, driving({ x: 0, y: 0, z: 1 }));
+  feed(e, 5100, HZ + 1, rampAndHold(1.0, 1));
+  feed(e, 6200, 4 * HZ + 1, () => ({ x: 2, y: 0, z: 0 }));
+  feed(e, 10300, 20 * HZ + 1, driving({ x: 0, y: 0, z: 1 }));
+  const scoreBeforeIdle = e.score;
 
-  // Measure accrual over a further 60 s window, once warmed up. The getter
-  // is rounded for display, so the delta can land ±1 off the theoretical 30
-  // depending on where each side's fraction rounds — real drift would show
-  // up as many points off, not one.
-  const before = e.points;
-  feed(e, 30100, 60 * HZ + 1, driving({ x: 1 + steadyG, y: 0, z: 0 }));
-  expect(e.points - before).toBeGreaterThanOrEqual(29);
-  expect(e.points - before).toBeLessThanOrEqual(31);
+  // Forget to end the trip: 90 s of the phone sitting perfectly still.
+  // If idle time still counted, this would pad the average back toward
+  // 100 — it must not.
+  feed(e, 30400, 90 * HZ + 1, still({ x: 0, y: 0, z: 1 }));
+  expect(e.live).toBe(false);
+  expect(e.score).toBeCloseTo(scoreBeforeIdle, 6);
+});
+
+test('a trip with no live samples yet scores a perfect 100, not NaN', () => {
+  const e = new SmoothnessEngine();
+  feed(e, 0, 30 * HZ + 1, still({ x: 0, y: 0, z: 1 }));
+  expect(e.live).toBe(false);
+  expect(e.score).toBe(100);
 });
 
 test('samples with non-increasing timestamps are ignored', () => {
   const e = new SmoothnessEngine();
   e.push({ x: 0, y: 0, z: 1, t: 0 });
   e.push({ x: 0.9, y: 0, z: 0, t: 0 }); // same t: no Δt, no jerk
-  e.push({ x: 0.9, y: 0, z: 0, t: 50 }); // backwards: ignored
-  e.push({ x: 0, y: 0, z: 1, t: 100 }); // the only real step: 0.1 s
+  e.push({ x: 0.9, y: 0, z: 0, t: -50 }); // backwards: ignored
+  // A large, deliberately unrealistic magnitude jump (not a realistic drive
+  // event) for the one real step, so it clearly crosses the liveness bar
+  // within this single sample and survives the getters' rounding — a
+  // subtler jump would be real too, but too small to observe through
+  // score (which now requires live) or the rounded smoothness getter.
+  e.push({ x: 3, y: 0, z: 0, t: 100 });
   expect(e.seconds).toBeCloseTo(0.1, 6);
+  expect(e.live).toBe(true);
   expect(e.score).toBeGreaterThan(0);
   expect(e.score).toBeLessThan(100); // the one real step's jerk still counts
 });
 
-test('a fresh engine has scored nothing, earned nothing, and proven nothing', () => {
+test('a fresh engine has scored nothing and proven nothing', () => {
   const e = new SmoothnessEngine();
   expect(e.smoothness).toBe(100); // no roughness recorded yet
   expect(e.score).toBe(100);
   expect(e.seconds).toBe(0);
-  expect(e.points).toBe(0);
   expect(e.live).toBe(false);
 });

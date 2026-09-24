@@ -108,7 +108,6 @@ export function DriveScreen() {
       endedAt: formatTimestamp(new Date()),
       seconds: Math.round(engine.seconds),
       score: engine.score,
-      points: engine.points,
     };
     const priorBest = computeStats(await store.trips()).bestScore;
     await store.putTrip(trip);

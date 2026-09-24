@@ -1,21 +1,20 @@
 import { computeStats } from './stats';
 import type { Trip } from './trip';
 
-function trip(startedAt: string, score: number, points = 10, seconds = 600): Trip {
-  return { startedAt, endedAt: startedAt, seconds, score, points };
+function trip(startedAt: string, score: number, seconds = 600): Trip {
+  return { startedAt, endedAt: startedAt, seconds, score };
 }
 
 // Ten trips on consecutive hours: the first five average 60, the last five 80.
 function tenTrips(): Trip[] {
   return Array.from({ length: 10 }, (_, i) =>
-    trip(`2026-09-${String(10 + i).padStart(2, '0')}T08:00:00Z`, i < 5 ? 60 : 80, i + 1, 60),
+    trip(`2026-09-${String(10 + i).padStart(2, '0')}T08:00:00Z`, i < 5 ? 60 : 80, 60),
   );
 }
 
 test('an empty history has no stats', () => {
   expect(computeStats([])).toEqual({
     totalTrips: 0,
-    totalPoints: 0,
     totalSeconds: 0,
     bestScore: null,
     averageScore: null,
@@ -26,10 +25,9 @@ test('an empty history has no stats', () => {
 });
 
 test('a single trip is its own best, average, and recent average', () => {
-  const s = computeStats([trip('2026-09-20T08:00:00Z', 77.5, 30, 1200)]);
+  const s = computeStats([trip('2026-09-20T08:00:00Z', 77.5, 1200)]);
   expect(s).toEqual({
     totalTrips: 1,
-    totalPoints: 30,
     totalSeconds: 1200,
     bestScore: 77.5,
     averageScore: 77.5,
@@ -47,7 +45,6 @@ test('improvement compares the last five trips against the five before them', ()
   expect(s.improvement).toBeCloseTo(20, 10);
   expect(s.bestScore).toBe(80);
   expect(s.averageScore).toBeCloseTo(70, 10);
-  expect(s.totalPoints).toBe(55); // 1+2+…+10
   expect(s.totalSeconds).toBe(600);
 });
 

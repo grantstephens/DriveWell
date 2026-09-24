@@ -10,8 +10,8 @@ import { SqliteStore } from '../storage/SqliteStore';
 import { lightTheme } from '../theme';
 import { improvementText, StatsScreen } from './Stats';
 
-function trip(startedAt: string, score: number, points: number, seconds = 600): Trip {
-  return { startedAt, endedAt: startedAt, seconds, score, points };
+function trip(startedAt: string, score: number, seconds = 600): Trip {
+  return { startedAt, endedAt: startedAt, seconds, score };
 }
 
 async function renderStats(store: Store) {
@@ -38,8 +38,8 @@ test('shows an empty state before any drive is recorded', async () => {
 });
 
 test('shows lifetime totals once trips exist', async () => {
-  await store.putTrip(trip('2026-09-19T08:00:00Z', 60, 10));
-  await store.putTrip(trip('2026-09-20T08:00:00Z', 90, 40));
+  await store.putTrip(trip('2026-09-19T08:00:00Z', 60));
+  await store.putTrip(trip('2026-09-20T08:00:00Z', 90));
   await renderStats(store);
 
   await waitFor(() => expect(screen.getByText('90%')).toBeTruthy()); // best drive
@@ -49,7 +49,7 @@ test('shows lifetime totals once trips exist', async () => {
 
 test('renders one bar per recent trip', async () => {
   for (let i = 0; i < 7; i++) {
-    await store.putTrip(trip(`2026-09-1${i}T08:00:00Z`, 70, 5));
+    await store.putTrip(trip(`2026-09-1${i}T08:00:00Z`, 70));
   }
   await renderStats(store);
   await waitFor(() => expect(screen.getByTestId('stats-chart')).toBeTruthy());
@@ -57,7 +57,7 @@ test('renders one bar per recent trip', async () => {
 });
 
 test('improvement only appears once an earlier window exists', async () => {
-  await store.putTrip(trip('2026-09-19T08:00:00Z', 60, 10));
+  await store.putTrip(trip('2026-09-19T08:00:00Z', 60));
   await renderStats(store);
   await waitFor(() => expect(screen.getByText('1')).toBeTruthy()); // total drives rendered
   expect(screen.queryByTestId('stats-improvement')).toBeNull();

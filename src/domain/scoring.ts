@@ -34,32 +34,33 @@
  * roughness combines them (sustained is scaled to g/s-equivalents), and
  * smoothness is the linear falloff from 100 at rest to 0 at BROWN_ROUGHNESS.
  *
- * Points: once smoothness reaches GREEN_THRESHOLD the leaf is "green" and
- * points accrue proportionally — 0/s at the threshold, POINTS_PER_SECOND at
- * smoothness 100. Sitting at a genuine traffic light scores 100 and racks
- * up points: that is deliberate, stillness *while driving* is smooth.
- *
- * But an accelerometer cannot tell "parked" from "cruising at a perfectly
- * constant velocity" apart — both read as zero acceleration, a direct
- * consequence of Newton's first law, not a bug to filter around. Without a
- * second check, that makes a phone left motionless on a table
- * indistinguishable from the smoothest drive imaginable, and points would
- * accrue for doing nothing at all. `live` closes that gap: a rolling EMA of
- * the *raw*, unfloored jerk/sustained signal — the same "any real vehicle
- * vibrates" fact that section above spends so much effort filtering *out*
- * of the roughness score is exactly what proves a phone is actually in a
- * running, moving vehicle in the first place. A truly inert phone (sensor
- * noise only, many times smaller than the smallest real vehicle vibration)
- * never crosses LIVENESS_EPSILON; any real vehicle crosses it within a
- * sample or two. Points require both `live` and a green smoothness — a
- * table never earns points, no matter how long it sits there, and a phone
- * abandoned mid-trip stops earning once ACTIVITY_TC_S's rolling window
- * decays past the threshold (a bounded grace period, not a hard cutoff, so
- * an ordinary traffic stop with the engine idling doesn't get penalized for
- * the same stillness that a table produces). The one case this cannot
- * catch — sitting in a parked car with the engine running — is the same
- * physical-limitation trade a speedometer-free, GPS-free design accepts
- * everywhere else in this app.
+ * `score` is the trip-so-far time-weighted average of smoothness — but
+ * only over time proven *live*. An accelerometer cannot tell "parked" from
+ * "cruising at a perfectly constant velocity" apart — both read as zero
+ * acceleration, a direct consequence of Newton's first law, not a bug to
+ * filter around. Without a second check, a phone left motionless on a
+ * table would score identically to the smoothest drive imaginable, padding
+ * a rough trip's average with "perfect" idle time. `live` closes that gap:
+ * a rolling EMA of the *raw*, unfloored jerk/sustained signal — the same
+ * "any real vehicle vibrates" fact the section above spends so much effort
+ * filtering *out* of the roughness score is exactly what proves a phone is
+ * actually in a running, moving vehicle in the first place. A truly inert
+ * phone (sensor noise only, many times smaller than the smallest real
+ * vehicle vibration) never crosses LIVENESS_EPSILON; any real vehicle
+ * crosses it within a sample or two. `score`'s accumulation requires both
+ * `live` and (once a trip has run long enough — see SCORING_SETTLE_S) a
+ * non-bursty activity signal, so a table never contributes to the average
+ * no matter how long it sits there, and a phone abandoned mid-trip stops
+ * contributing once ACTIVITY_TC_S's rolling window decays past the
+ * threshold (a bounded grace period, not a hard cutoff, so an ordinary
+ * traffic stop with the engine idling doesn't get excluded for the same
+ * stillness that a table produces). `smoothness` (the instantaneous
+ * reading) stays true regardless of `live` — it answers "how rough was
+ * whatever motion happened", which stays a true statement (there was none)
+ * even while `live` is false; only `score`'s accumulation gates on it. The
+ * one case this cannot catch — sitting in a parked car with the engine
+ * running — is the same physical-limitation trade a speedometer-free,
+ * GPS-free design accepts everywhere else in this app.
  *
  * The constants below — including the v2 filter, dead-band, and liveness
  * gate — were derived against synthetic accelerometer-noise models (aliased
@@ -136,20 +137,14 @@ const ACTIVITY_BURSTINESS_LIMIT = 3;
 /**
  * The burstiness ratio needs several seconds of data to mean anything — a
  * duty cycle can't be measured faster than roughly one cycle of whatever
- * it's measuring. Before a trip has run this long, points fall back to the
- * plain amplitude check, same as before this gate existed. This is a
- * deliberate, bounded gap, not an oversight: it only makes rapid, repeated
- * short trips a (much higher-effort, self-limiting) residual exploit path,
- * while closing the realistic one — a phone left tapped and unattended for
- * a long stretch.
+ * it's measuring. Before a trip has run this long, `score` accumulation
+ * falls back to the plain amplitude (`live`) check, same as before this
+ * gate existed. This is a deliberate, bounded gap, not an oversight: it
+ * only makes rapid, repeated short trips a (much higher-effort,
+ * self-limiting) residual exploit path, while closing the realistic one —
+ * a phone left tapped and unattended for a long stretch.
  */
-const POINTS_SETTLE_S = 15;
-
-/** Smoothness at which the leaf counts as green and points start accruing. */
-export const GREEN_THRESHOLD = 80;
-
-/** Points per second at smoothness 100 (the maximum accrual rate). */
-export const POINTS_PER_SECOND = 1;
+const SCORING_SETTLE_S = 15;
 
 /** Resting gravity in g. The accelerometer's total magnitude at rest. */
 const GRAVITY_G = 1;
@@ -171,7 +166,7 @@ export class SmoothnessEngine {
   private activityPowerEma = 0;
   private smoothnessWeighted = 0;
   private secondsAcc = 0;
-  private pointsAcc = 0;
+  private liveSecondsAcc = 0;
 
   /** push feeds one sample. Samples with non-increasing t are ignored. */
   push(s: AccelSample): void {
@@ -203,13 +198,10 @@ export class SmoothnessEngine {
     this.activityPowerEma += activityAlpha * (activityLevel * activityLevel - this.activityPowerEma);
 
     const smoothness = this.smoothnessNow();
-    this.smoothnessWeighted += smoothness * dt;
     this.secondsAcc += dt;
-    if (this.live && this.pointsEligible && smoothness >= GREEN_THRESHOLD) {
-      this.pointsAcc +=
-        ((smoothness - GREEN_THRESHOLD) / (100 - GREEN_THRESHOLD)) *
-        POINTS_PER_SECOND *
-        dt;
+    if (this.live && this.scoringEligible) {
+      this.smoothnessWeighted += smoothness * dt;
+      this.liveSecondsAcc += dt;
     }
 
     this.lastT = s.t;
@@ -221,16 +213,19 @@ export class SmoothnessEngine {
   }
 
   /**
-   * score is the trip-so-far average: the time-weighted mean smoothness,
-   * clamped to the documented 0-100 — a hundred 0.1 s additions of exactly
-   * 100 can sum to 100.0000000000002, and a score above 100 would break the
-   * leaf color mapping and every stat downstream. A trip with no timed
-   * samples yet scores a perfect 100 — no movement recorded is no roughness
-   * recorded.
+   * score is the trip-so-far average: the time-weighted mean smoothness
+   * over *live* driving time only, clamped to the documented 0-100 — a
+   * hundred 0.1 s additions of exactly 100 can sum to 100.0000000000002,
+   * and a score above 100 would break the leaf color mapping and every
+   * stat downstream. Excluding non-live time matters more now that score
+   * is the app's only headline number: a phone left running after you've
+   * parked must not pad a rough trip's average back toward 100 with
+   * "perfect" idle stillness. A trip with no live samples yet scores a
+   * perfect 100 — no driving recorded is no roughness recorded.
    */
   get score(): number {
-    if (this.secondsAcc === 0) return 100;
-    return Math.min(100, this.smoothnessWeighted / this.secondsAcc);
+    if (this.liveSecondsAcc === 0) return 100;
+    return Math.min(100, this.smoothnessWeighted / this.liveSecondsAcc);
   }
 
   /** seconds is the accumulated driving time. */
@@ -239,35 +234,27 @@ export class SmoothnessEngine {
   }
 
   /**
-   * points is the accrued payout, rounded — floor would show 599 for a
-   * perfect ten minutes, because a hundred additions of 0.1 land at
-   * 9.999999999999998 and nothing in the pipeline is ever exactly decimal.
-   */
-  get points(): number {
-    return Math.round(this.pointsAcc);
-  }
-
-  /**
    * live is true once the rolling activity signal proves this is an actual
    * running, moving vehicle rather than a phone left motionless somewhere.
-   * Points require this in addition to a green smoothness; the leaf's own
-   * color and the trip's score do not — they answer "how rough was
-   * whatever motion happened", which stays a true statement (there was
-   * none) even while this is false.
+   * `score`'s accumulation requires this; `smoothness` (the instantaneous
+   * reading) does not — it answers "how rough was whatever motion
+   * happened", which stays a true statement (there was none) even while
+   * this is false.
    */
   get live(): boolean {
     return this.activityEma >= LIVENESS_EPSILON;
   }
 
   /**
-   * pointsEligible is the burstiness veto on top of `live`: once a trip has
-   * run long enough for a duty cycle to mean anything, sparse rhythmic
-   * activity (a faked tap, not a running engine) stops qualifying for
-   * points even though `live` — the UI's "is this a vehicle at all" signal
-   * — stays true. See ACTIVITY_BURSTINESS_LIMIT and POINTS_SETTLE_S.
+   * scoringEligible is the burstiness veto on top of `live`: once a trip
+   * has run long enough for a duty cycle to mean anything, sparse rhythmic
+   * activity (a faked tap, not a running engine) stops qualifying toward
+   * `score`'s accumulation even though `live` — the UI's "is this a
+   * vehicle at all" signal — stays true. See ACTIVITY_BURSTINESS_LIMIT
+   * and SCORING_SETTLE_S.
    */
-  private get pointsEligible(): boolean {
-    if (this.secondsAcc < POINTS_SETTLE_S) return true;
+  private get scoringEligible(): boolean {
+    if (this.secondsAcc < SCORING_SETTLE_S) return true;
     if (this.activityEma <= 0) return true; // nothing to divide by; live() already gates true stillness
     const variance = Math.max(0, this.activityPowerEma - this.activityEma * this.activityEma);
     const burstiness = variance / (this.activityEma * this.activityEma);

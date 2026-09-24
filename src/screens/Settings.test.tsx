@@ -48,7 +48,6 @@ beforeEach(async () => {
     endedAt: '2026-09-20T08:10:00Z',
     seconds: 600,
     score: 80,
-    points: 40,
   });
   confirm.mockReset();
   notify.mockReset();

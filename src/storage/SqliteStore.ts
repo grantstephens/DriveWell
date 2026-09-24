@@ -3,16 +3,15 @@ import type { Trip } from '../domain/trip';
 import type { SqlDatabase } from './sql';
 
 /** The columns, in the one order every query in this file uses. */
-const COLUMNS = 'startedAt, endedAt, seconds, score, points';
+const COLUMNS = 'startedAt, endedAt, seconds, score';
 
 const PUT = `
   INSERT INTO trips (${COLUMNS})
-  VALUES (?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?)
   ON CONFLICT(startedAt) DO UPDATE SET
     endedAt = excluded.endedAt,
     seconds = excluded.seconds,
-    score = excluded.score,
-    points = excluded.points
+    score = excluded.score
 `;
 
 /** A row as SQLite hands it back, before it is trusted as a Trip. */
@@ -21,7 +20,6 @@ interface Row {
   endedAt: string;
   seconds: number;
   score: number;
-  points: number;
 }
 function toTrip(row: Row): Trip {
   // Copied field by field rather than spread: node:sqlite returns
@@ -31,7 +29,6 @@ function toTrip(row: Row): Trip {
     endedAt: row.endedAt,
     seconds: row.seconds,
     score: row.score,
-    points: row.points,
   };
 }
 
@@ -50,21 +47,22 @@ export class SqliteStore implements Store {
         startedAt TEXT PRIMARY KEY NOT NULL,
         endedAt   TEXT NOT NULL,
         seconds   INTEGER NOT NULL,
-        score     REAL NOT NULL,
-        points    INTEGER NOT NULL
+        score     REAL NOT NULL
       )
     `);
+    // Migrate a pre-existing on-device database from before points was
+    // removed — CREATE TABLE IF NOT EXISTS above is a no-op against it, so
+    // its points column (NOT NULL, no default) would otherwise reject the
+    // very next putTrip with a constraint violation.
+    const columns = await db.all<{ name: string }>('PRAGMA table_info(trips)');
+    if (columns.some((c) => c.name === 'points')) {
+      await db.exec('ALTER TABLE trips DROP COLUMN points');
+    }
     return new SqliteStore(db);
   }
 
   async putTrip(trip: Trip): Promise<void> {
-    await this.db.run(PUT, [
-      trip.startedAt,
-      trip.endedAt,
-      trip.seconds,
-      trip.score,
-      trip.points,
-    ]);
+    await this.db.run(PUT, [trip.startedAt, trip.endedAt, trip.seconds, trip.score]);
   }
 
   async trips(): Promise<Trip[]> {

@@ -11,7 +11,6 @@ import type { Theme } from '../theme';
 
 const EMPTY_STATS: DriveStats = {
   totalTrips: 0,
-  totalPoints: 0,
   totalSeconds: 0,
   bestScore: null,
   averageScore: null,

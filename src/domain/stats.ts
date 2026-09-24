@@ -11,7 +11,6 @@ import type { Trip } from './trip';
  */
 export interface DriveStats {
   totalTrips: number;
-  totalPoints: number;
   /** totalSeconds is lifetime driving time. */
   totalSeconds: number;
   /** bestScore is the highest trip score, null when there are no trips. */
@@ -49,7 +48,6 @@ export function computeStats(trips: Trip[]): DriveStats {
   if (sorted.length === 0) {
     return {
       totalTrips: 0,
-      totalPoints: 0,
       totalSeconds: 0,
       bestScore: null,
       averageScore: null,
@@ -65,7 +63,6 @@ export function computeStats(trips: Trip[]): DriveStats {
 
   return {
     totalTrips: sorted.length,
-    totalPoints: sorted.reduce((a, t) => a + t.points, 0),
     totalSeconds: sorted.reduce((a, t) => a + t.seconds, 0),
     bestScore: Math.max(...scores),
     averageScore: mean(scores),

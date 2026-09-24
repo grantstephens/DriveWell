@@ -118,7 +118,6 @@ test('the idle screen shows a lifetime average, not points, and the last trip ha
     endedAt: '2026-01-01T00:10:00Z',
     seconds: 600,
     score: 70,
-    points: 999, // still required by the type at this point in the plan; irrelevant here
   });
   const motion = fakeMotion();
   await renderDrive(store);
@@ -175,7 +174,6 @@ test('beating your prior best score shows a personal-best toast', async () => {
     endedAt: '2026-01-01T00:01:00Z',
     seconds: 60,
     score: 50,
-    points: 10,
   });
 
   const motion = fakeMotion();
@@ -199,7 +197,6 @@ test('a trip that does not beat the prior best shows no toast', async () => {
     endedAt: '2026-01-01T00:01:00Z',
     seconds: 60,
     score: 100,
-    points: 10,
   });
 
   const motion = fakeMotion();

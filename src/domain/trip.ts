@@ -16,8 +16,6 @@ export interface Trip {
    * the instantaneous smoothness over every sample (see scoring.ts).
    */
   score: number;
-  /** points is the gamification payout earned during the trip (see scoring.ts). */
-  points: number;
 }
 
 /**
