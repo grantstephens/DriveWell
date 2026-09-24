@@ -82,19 +82,39 @@ test('scoring is orientation-independent: gravity alone never penalizes', () => 
 // into what looks like sample-to-sample jerk. Without the low-pass pre-filter
 // in scoring.ts, even mild vibration during genuinely careful driving
 // collapsed the score to 0. It must not.
-test('realistic vibration noise degrades gracefully instead of crashing the score', () => {
+// Under the adaptive baseline, continuous vibration of any amplitude
+// eventually reads as "normal" for this drive — that's the point. What
+// must still hold: stronger vibration settles measurably lower than mild
+// vibration, even at steady state, and neither one ever crashes to 0.
+test('continuous vibration settles high regardless of amplitude, but stronger vibration still settles lower', () => {
   const mild = new SmoothnessEngine();
   feed(mild, 0, 30 * HZ + 1, (i) => ({ x: 1 + (i % 2 === 0 ? 0.08 : -0.08), y: 0, z: 0 }));
-  expect(mild.smoothness).toBeGreaterThanOrEqual(80);
+  expect(mild.smoothness).toBeGreaterThanOrEqual(90);
 
-  // Much stronger vibration (a rough idle or poor road, alternating at the
-  // Nyquist limit — a worst-case pattern for any low-pass filter) degrades
-  // the score without zeroing it outright: a cliff here would be as wrong
-  // as never penalizing anything.
   const rough = new SmoothnessEngine();
   feed(rough, 0, 30 * HZ + 1, (i) => ({ x: 1 + (i % 2 === 0 ? 0.15 : -0.15), y: 0, z: 0 }));
-  expect(rough.smoothness).toBeGreaterThan(30);
-  expect(rough.smoothness).toBeLessThan(80);
+  expect(rough.smoothness).toBeGreaterThanOrEqual(80);
+  expect(rough.smoothness).toBeLessThan(mild.smoothness);
+});
+
+// The real bug this task fixes: captured motorway data showed jerkEma
+// sitting at a steady 0.4-0.5 g/s for an entire highway cruise — 15x
+// JERK_FLOOR — because real road vibration at speed (measured at 2.3-3.5 Hz)
+// is close enough to the driving-event frequency band that a plain low-pass
+// can't reject it. The fix: an adaptive baseline tracks "what's been normal
+// recently" and only the excess above it counts as roughness.
+test('continuous ambient vibration recovers toward 100 once the baseline catches up', () => {
+  const e = new SmoothnessEngine();
+  // Amplitude tuned to match real captured motorway data (steady-state
+  // jerkEma ~0.4-0.9 g/s once settled) — this is deliberately "unrealistic"
+  // vibration if judged by the old, un-baselined model (it would sit around
+  // 65-70% forever), which is exactly the point.
+  feed(e, 0, 5 * HZ + 1, (i) => ({ x: 0, y: 0, z: 1 + (i % 2 === 0 ? 0.18 : -0.18) }));
+  const smoothnessBeforeSettling = e.smoothness;
+  expect(smoothnessBeforeSettling).toBeLessThan(90); // the old-model-style dip, early on
+
+  feed(e, 5100, 115 * HZ + 1, (i) => ({ x: 0, y: 0, z: 1 + (i % 2 === 0 ? 0.18 : -0.18) }));
+  expect(e.smoothness).toBeGreaterThanOrEqual(93); // recovered once the baseline caught up
 });
 
 // The second regression this engine exists to fix: an accelerometer cannot
@@ -274,6 +294,31 @@ test('samples with non-increasing timestamps are ignored', () => {
   expect(e.live).toBe(true);
   expect(e.score).toBeGreaterThan(0);
   expect(e.score).toBeLessThan(100); // the one real step's jerk still counts
+});
+
+// The explicit, accepted tradeoff of an adaptive baseline: it's very good
+// at rejecting *constant* noise, which is also why it eventually forgives
+// continuously jerky driving held well beyond its own time constant — a
+// narrower failure mode than today's "every highway drive scores ~70%
+// forever" bug, but a real one, documented here rather than left implicit.
+test('continuously jerky driving sustained well beyond the baseline window is gradually forgiven', () => {
+  const e = new SmoothnessEngine();
+  // An unambiguously harsh, continuously oscillating input — well beyond
+  // any real ambient vibration amplitude this file's other tests use.
+  const harsh = (i: number) => ({ x: 0, y: 0, z: 1 + (i % 2 === 0 ? 0.35 : -0.35) });
+  feed(e, 0, 10 * HZ + 1, harsh);
+  const smoothnessEarly = e.smoothness;
+  expect(smoothnessEarly).toBeLessThan(50); // correctly flagged as harsh at first
+
+  feed(e, 10100, 80 * HZ + 1, harsh);
+  expect(e.smoothness).toBeGreaterThan(smoothnessEarly + 30); // substantially, though not fully, forgiven
+});
+
+test('sustained cornering or braking (a steady g-force, not jerk) is never forgiven', () => {
+  const e = new SmoothnessEngine();
+  feed(e, 0, HZ + 1, (i) => ({ x: 1 + 0.6 * (i / HZ), y: 0, z: 0 })); // ramp to a real lateral-g corner
+  feed(e, 1100, 89 * HZ + 1, () => ({ x: 1.6, y: 0, z: 0 })); // hold it for 89 more seconds
+  expect(e.smoothness).toBeLessThan(20); // still tanked — this path never had a baseline applied
 });
 
 test('a fresh engine has scored nothing and proven nothing', () => {

@@ -31,8 +31,11 @@
  *   hard corner or a foot resting on the brake shows low jerk but high
  *   sustained.
  *
- * roughness combines them (sustained is scaled to g/s-equivalents), and
- * smoothness is the linear falloff from 100 at rest to 0 at BROWN_ROUGHNESS.
+ * roughness combines them (sustained is scaled to g/s-equivalents; jerk is
+ * scored only above a slow adaptive baseline — see JERK_BASELINE_TC_S — so
+ * persistent ambient vibration stops counting as roughness once it's been
+ * around long enough to be "normal" for this drive), and smoothness is the
+ * linear falloff from 100 at rest to 0 at BROWN_ROUGHNESS.
  *
  * `score` is the trip-so-far time-weighted average of smoothness — but
  * only over time proven *live*. An accelerometer cannot tell "parked" from
@@ -104,6 +107,19 @@ const SUSTAINED_WEIGHT = 3;
 const BROWN_ROUGHNESS = 2.0;
 
 /**
+ * Time constant, seconds, for a second-stage EMA of jerkEma itself,
+ * tracking "what's been normal for this road/speed recently." Only the
+ * excess of jerkEma above this baseline counts as roughness — see the
+ * module doc for why frequency alone can't separate real events from
+ * ambient vibration, and why persistence duration can: real events elevate
+ * jerkEma for a few seconds; ambient vibration elevates it for the whole
+ * drive. A first-pass guess, like every other constant here — the
+ * documented tradeoff is that continuously harsh driving sustained *longer*
+ * than this window gradually reads as the new normal too.
+ */
+const JERK_BASELINE_TC_S = 20;
+
+/**
  * Rolling time constant, seconds, for the liveness-activity EMA. Long
  * enough to ride through an ordinary traffic stop with the engine idling
  * (~30 s of grace) without pausing points; short enough that a phone
@@ -164,6 +180,7 @@ export class SmoothnessEngine {
   private dynEma = 0;
   private activityEma = 0;
   private activityPowerEma = 0;
+  private jerkBaseline: number | null = null;
   private smoothnessWeighted = 0;
   private secondsAcc = 0;
   private liveSecondsAcc = 0;
@@ -191,6 +208,10 @@ export class SmoothnessEngine {
     const alpha = dt / (EMA_TC_S + dt);
     this.jerkEma += alpha * (jerk - this.jerkEma);
     this.dynEma += alpha * (sustained - this.dynEma);
+
+    if (this.jerkBaseline === null) this.jerkBaseline = this.jerkEma;
+    const baselineAlpha = dt / (JERK_BASELINE_TC_S + dt);
+    this.jerkBaseline += baselineAlpha * (this.jerkEma - this.jerkBaseline);
 
     const activityLevel = Math.max(jerkRaw, sustainedRaw);
     const activityAlpha = dt / (ACTIVITY_TC_S + dt);
@@ -262,7 +283,8 @@ export class SmoothnessEngine {
   }
 
   private smoothnessNow(): number {
-    const roughness = this.jerkEma + SUSTAINED_WEIGHT * this.dynEma;
+    const excessJerk = Math.max(0, this.jerkEma - (this.jerkBaseline ?? this.jerkEma));
+    const roughness = excessJerk + SUSTAINED_WEIGHT * this.dynEma;
     return Math.min(100, Math.max(0, 100 * (1 - roughness / BROWN_ROUGHNESS)));
   }
 
@@ -275,6 +297,7 @@ export class SmoothnessEngine {
     return {
       filteredMag: this.filteredMag,
       jerkEma: this.jerkEma,
+      jerkBaseline: this.jerkBaseline,
       dynEma: this.dynEma,
       activityEma: this.activityEma,
       smoothness: this.smoothnessNow(),
