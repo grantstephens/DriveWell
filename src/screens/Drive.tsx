@@ -32,9 +32,8 @@ export function DriveScreen() {
   const [smoothness, setSmoothness] = useState(100);
   const [live, setLive] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [points, setPoints] = useState(0);
   const [lastTrip, setLastTrip] = useState<Trip | null>(null);
-  const [lifetimePoints, setLifetimePoints] = useState(0);
+  const [lifetimeAverage, setLifetimeAverage] = useState<number | null>(null);
   const [milestone, setMilestone] = useState<string | null>(null);
 
   const engineRef = useRef<SmoothnessEngine | null>(null);
@@ -44,7 +43,7 @@ export function DriveScreen() {
   useEffect(() => {
     let cancelled = false;
     void store.trips().then((trips) => {
-      if (!cancelled) setLifetimePoints(computeStats(trips).totalPoints);
+      if (!cancelled) setLifetimeAverage(computeStats(trips).averageScore);
     });
     return () => {
       cancelled = true;
@@ -74,7 +73,6 @@ export function DriveScreen() {
     setSmoothness(100);
     setLive(false);
     setSeconds(0);
-    setPoints(0);
     setLastTrip(null);
     setMilestone(null);
     setDriving(true);
@@ -85,7 +83,6 @@ export function DriveScreen() {
         setSmoothness(engine.smoothness);
         setLive(engine.live);
         setSeconds(engine.seconds);
-        setPoints(engine.points);
         capture.push({ t: sample.t, x: sample.x, y: sample.y, z: sample.z, ...engine.debugSnapshot });
       });
     } catch (err) {
@@ -136,17 +133,24 @@ export function DriveScreen() {
       </View>
 
       {driving ? (
-        <View style={styles.stats}>
+        <View style={styles.stats} testID="drive-stats-driving">
           <Stat label="Elapsed" value={formatClock(seconds)} theme={theme} />
-          <Stat label="Points this drive" value={String(points)} theme={theme} />
         </View>
       ) : (
-        <View style={styles.stats}>
-          <Stat label="Lifetime points" value={String(lifetimePoints)} theme={theme} />
+        <View style={styles.stats} testID="drive-stats-idle">
+          {lifetimeAverage !== null && (
+            <Stat
+              testID="drive-lifetime-average"
+              label="Lifetime average"
+              value={`${Math.round(lifetimeAverage)}%`}
+              theme={theme}
+            />
+          )}
           {lastTrip && (
             <Stat
+              testID="drive-last-trip"
               label="Last trip"
-              value={`${Math.round(lastTrip.score)}% · +${lastTrip.points} pts`}
+              value={`${Math.round(lastTrip.score)}%`}
               theme={theme}
             />
           )}
@@ -171,12 +175,24 @@ export function DriveScreen() {
   );
 }
 
-function Stat({ label, value, theme }: { label: string; value: string; theme: Theme }) {
+function Stat({
+  label,
+  value,
+  theme,
+  testID,
+}: {
+  label: string;
+  value: string;
+  theme: Theme;
+  testID?: string;
+}) {
   const styles = createStyles(theme);
   return (
-    <Card style={styles.stat}>
+    <Card style={styles.stat} testID={testID}>
       <Card.Content style={styles.statContent}>
-        <Text variant="headlineSmall">{value}</Text>
+        <Text variant="headlineSmall" testID={testID ? `${testID}-value` : undefined}>
+          {value}
+        </Text>
         <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }}>
           {label}
         </Text>

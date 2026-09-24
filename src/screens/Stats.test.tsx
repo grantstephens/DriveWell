@@ -42,9 +42,9 @@ test('shows lifetime totals once trips exist', async () => {
   await store.putTrip(trip('2026-09-20T08:00:00Z', 90, 40));
   await renderStats(store);
 
-  await waitFor(() => expect(screen.getByText('50')).toBeTruthy()); // total points
-  expect(screen.getByText('90%')).toBeTruthy(); // best drive
+  await waitFor(() => expect(screen.getByText('90%')).toBeTruthy()); // best drive
   expect(screen.getByText('2')).toBeTruthy(); // total drives
+  expect(screen.queryByText('50')).toBeNull(); // no lifetime-points tile anymore
 });
 
 test('renders one bar per recent trip', async () => {

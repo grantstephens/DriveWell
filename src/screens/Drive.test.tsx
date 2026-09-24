@@ -110,7 +110,32 @@ test('ending a drive stops the subscription and persists a trip', async () => {
   const trips = await store.trips();
   expect(trips).toHaveLength(1);
   expect(trips[0]!.score).toBeGreaterThanOrEqual(99);
-  expect(trips[0]!.points).toBeGreaterThanOrEqual(9);
+});
+
+test('the idle screen shows a lifetime average, not points, and the last trip has no points suffix', async () => {
+  await store.putTrip({
+    startedAt: '2026-01-01T00:00:00Z',
+    endedAt: '2026-01-01T00:10:00Z',
+    seconds: 600,
+    score: 70,
+    points: 999, // still required by the type at this point in the plan; irrelevant here
+  });
+  const motion = fakeMotion();
+  await renderDrive(store);
+
+  await waitFor(() => expect(screen.getByTestId('drive-lifetime-average')).toBeTruthy());
+  expect(screen.getByTestId('drive-lifetime-average-value').props.children).toBe('70%');
+
+  await fireEvent.press(screen.getByTestId('drive-start'));
+  await waitFor(() => expect(screen.getByTestId('drive-stop')).toBeTruthy());
+  for (let i = 0; i <= 100; i++) {
+    motion.push({ x: 0, y: 0, z: 1 + (i % 2 === 0 ? 0.01 : -0.01), t: i * 100 });
+  }
+  await fireEvent.press(screen.getByTestId('drive-stop'));
+  await waitFor(() => expect(screen.getByTestId('drive-start')).toBeTruthy());
+
+  const lastTripValue = screen.getByTestId('drive-last-trip-value').props.children;
+  expect(lastTripValue).toMatch(/^\d+%$/);
 });
 
 test('a trip shorter than the minimum is discarded, not saved', async () => {

@@ -28,8 +28,8 @@ export function improvementText(improvement: number): string {
   const rounded = Math.round(Math.abs(improvement));
   if (rounded === 0) return 'Holding steady over your last 5 drives.';
   return improvement > 0
-    ? `Up ${rounded} points over your last 5 drives — smoother driving.`
-    : `Down ${rounded} points over your last 5 drives.`;
+    ? `Up ${rounded} percentage points over your last 5 drives — smoother driving.`
+    : `Down ${rounded} percentage points over your last 5 drives.`;
 }
 
 /**
@@ -73,7 +73,6 @@ export function StatsScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.grid}>
-        <Metric label="Lifetime points" value={String(stats.totalPoints)} />
         <Metric label="Best drive" value={`${Math.round(stats.bestScore!)}%`} />
         <Metric label="Average score" value={`${Math.round(stats.averageScore!)}%`} />
         <Metric label="Total drives" value={String(stats.totalTrips)} />

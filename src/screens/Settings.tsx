@@ -38,8 +38,8 @@ export function SettingsScreen() {
           <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
             DriveWell watches your phone's accelerometer while you drive. Sudden braking,
             hard acceleration, and sharp cornering turn the leaf brown; a steady, gentle
-            touch turns it green. Once the leaf is fully green, you start earning points —
-            smooth driving is efficient driving.
+            touch turns it green — and pushes your live score toward 100%. Smooth driving
+            is efficient driving.
           </Text>
         </Card.Content>
       </Card>

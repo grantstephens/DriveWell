@@ -85,6 +85,12 @@ test('confirming deletes every trip and notifies', async () => {
   await expect(store.trips()).resolves.toEqual([]);
 });
 
+test('describes scoring without mentioning points', async () => {
+  await renderSettings();
+  expect(screen.getByText(/how scoring works/i)).toBeTruthy();
+  expect(screen.queryByText(/earning points/i)).toBeNull();
+});
+
 test('no export option before any drive this session', async () => {
   await renderSettings();
   expect(screen.queryByTestId('settings-export')).toBeNull();
