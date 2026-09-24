@@ -11,7 +11,7 @@ import type { Theme } from '../theme';
  * language explanation of how scoring works, and the destructive action.
  */
 export function SettingsScreen() {
-  const { store, bump } = useDrive();
+  const { store, bump, capture } = useDrive();
   const theme = useTheme();
   const styles = createStyles(theme);
 
@@ -24,6 +24,10 @@ export function SettingsScreen() {
     await store.deleteAllTrips();
     bump();
     await notify('Deleted', 'Your driving history has been cleared.');
+  }
+
+  async function handleExport(): Promise<void> {
+    await capture?.exportAndShare();
   }
 
   return (
@@ -49,6 +53,26 @@ export function SettingsScreen() {
           </Text>
         </Card.Content>
       </Card>
+
+      {capture && capture.count > 0 && (
+        <Card>
+          <Card.Content style={styles.cardContent}>
+            <Text variant="titleMedium">Export last drive</Text>
+            <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+              Shares the raw accelerometer data and scoring internals from your most recent
+              drive this session — useful for reporting a scoring issue or helping tune the
+              algorithm. Nothing is sent automatically; you choose where it goes.
+            </Text>
+            <Button
+              testID="settings-export"
+              mode="outlined"
+              onPress={() => void handleExport()}
+            >
+              Export last drive ({capture.count} samples)
+            </Button>
+          </Card.Content>
+        </Card>
+      )}
 
       <View style={styles.deleteWrapper}>
         <Button

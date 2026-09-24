@@ -280,9 +280,9 @@ export class SmoothnessEngine {
   }
 
   /**
-   * TEMPORARY — diagnostic-only, for calibrating against a real motorway
-   * drive (see debug/capture.ts). Delete this getter, and the whole
-   * debug/ directory, once that diagnosis is done.
+   * debugSnapshot exposes internal state for debug/capture.ts's per-sample
+   * export — the "Export last drive" action on Settings. Diagnostic-only:
+   * nothing in the engine's own behavior reads this back.
    */
   get debugSnapshot() {
     return {

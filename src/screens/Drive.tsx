@@ -5,9 +5,6 @@ import { Button, Card, Snackbar, Text, useTheme } from 'react-native-paper';
 
 import { Leaf } from '../components/Leaf';
 import { useDrive } from '../DriveContext';
-// TEMPORARY — see src/debug/capture.ts's own header. Delete this import and
-// every captureRef use below once the motorway-vibration diagnosis is done.
-import { Capture } from '../debug/capture';
 import { formatClock } from '../domain/duration';
 import { leafColor } from '../domain/leaf';
 import { SmoothnessEngine } from '../domain/scoring';
@@ -27,7 +24,7 @@ const KEEP_AWAKE_TAG = 'drivewell-drive';
  * counter — no separate "level up" ceremony to build or maintain.
  */
 export function DriveScreen() {
-  const { store, revision, bump } = useDrive();
+  const { store, revision, bump, startCapture } = useDrive();
   const theme = useTheme();
   const styles = createStyles(theme);
 
@@ -43,7 +40,6 @@ export function DriveScreen() {
   const engineRef = useRef<SmoothnessEngine | null>(null);
   const subscriptionRef = useRef<MotionSubscription | null>(null);
   const startedAtRef = useRef('');
-  const captureRef = useRef<Capture | null>(null); // TEMPORARY — see debug/capture.ts
 
   useEffect(() => {
     let cancelled = false;
@@ -82,10 +78,7 @@ export function DriveScreen() {
     setLastTrip(null);
     setMilestone(null);
     setDriving(true);
-    // Not gated on __DEV__: this beta's whole purpose is a signed release
-    // APK that captures real motorway data — __DEV__ is false there. See
-    // the TEMPORARY notes on this file — remove entirely once diagnosed.
-    captureRef.current = new Capture();
+    const capture = startCapture();
     try {
       subscriptionRef.current = await startMotion((sample) => {
         engine.push(sample);
@@ -93,7 +86,7 @@ export function DriveScreen() {
         setLive(engine.live);
         setSeconds(engine.seconds);
         setPoints(engine.points);
-        captureRef.current?.push({ t: sample.t, x: sample.x, y: sample.y, z: sample.z, ...engine.debugSnapshot }); // TEMPORARY
+        capture.push({ t: sample.t, x: sample.x, y: sample.y, z: sample.z, ...engine.debugSnapshot });
       });
     } catch (err) {
       setDriving(false);
@@ -174,17 +167,6 @@ export function DriveScreen() {
       <Snackbar visible={milestone !== null} onDismiss={() => setMilestone(null)} duration={3000}>
         <Text testID="drive-milestone">{milestone}</Text>
       </Snackbar>
-
-      {/* TEMPORARY — see debug/capture.ts. Not gated on __DEV__, see start(). */}
-      {!driving && (captureRef.current?.count ?? 0) > 0 && (
-        <Button
-          testID="drive-export-debug"
-          mode="text"
-          onPress={() => void captureRef.current?.exportAndShare()}
-        >
-          Export debug log ({captureRef.current?.count} samples)
-        </Button>
-      )}
     </View>
   );
 }

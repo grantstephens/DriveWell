@@ -1,9 +1,15 @@
 /**
- * TEMPORARY — a throwaway diagnostic tool for calibrating scoring.ts against
- * a real motorway drive (a synthetic-vibration model was wrong: see the
- * motorway-floor bug this exists to diagnose). Delete this whole directory,
- * its wiring in Drive.tsx, and SmoothnessEngine.debugSnapshot once that
- * diagnosis is done — none of this ships.
+ * Capture buffers one drive's raw accelerometer samples plus
+ * SmoothnessEngine's internal state (see scoring.ts's `debugSnapshot`), for
+ * export via Settings' "Export last drive" action. This exists for
+ * debugging and algorithm-tuning — e.g. it's what surfaced the motorway
+ * vibration-vs-harsh-driving miscalibration in the first place — not as a
+ * trip-history export/import feature (see AGENTS.md's "no CSV
+ * export/import" simplification, a different, deliberately out-of-scope
+ * thing: reconciling stored trip summaries across devices).
+ *
+ * Scoped to the current app session's most recent drive, in memory only —
+ * not persisted, so this never grows the on-device storage footprint.
  */
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
