@@ -1,0 +1,15 @@
+Fixes the missing export option from beta.4, and makes it a real feature.
+
+- beta.4's "Export debug log" button never actually appeared on a real
+  device — it was on a non-scrolling screen built for three elements, and
+  a fourth just got squeezed off-screen. It's been moved to a new "Export
+  last drive" card on the Settings screen instead, which fixes that and
+  gives it a permanent, discoverable home.
+- The export still shares your most recent drive's raw accelerometer data
+  and the scoring engine's internal signals — useful for reporting a
+  scoring issue or helping tune the algorithm. Nothing is sent
+  automatically; you choose where it goes via the share sheet.
+
+If you're on beta.4 specifically to help diagnose the motorway-vibration
+scoring issue: update to this build first, then drive your route and use
+the new Settings export.
