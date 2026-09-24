@@ -1,0 +1,24 @@
+The real motorway fix, and points are gone.
+
+- Fixed the bug from beta.4/.5's diagnostic data: ordinary motorway
+  vibration was scoring careful highway driving at ~70-78% forever, with
+  no way to reach a high score even on a genuinely smooth drive. Jerk is
+  now scored against an adaptive baseline — "what's been normal for this
+  road recently" — instead of a fixed threshold. Real harsh braking or
+  cornering still tanks the score exactly as before; sustained ambient
+  vibration no longer does.
+- Points are gone. The app now shows a live percentage while driving and
+  a trip score at the end, plus a lifetime average on Stats — one honest
+  number instead of two competing ones.
+- A phone left stationary is no longer saved as a fake, unearned 100%
+  trip, and no longer inflates your lifetime average or best score.
+
+Heads up: your existing trip history was scored under the old algorithm
+(ordinary highway driving typically ~70-78%). New drives will score
+noticeably higher under the same conditions — that's the fix working, not
+a sudden change in how you drive. Expect an "improvement" trend and maybe
+a personal-best toast on your first few drives under this build.
+
+Still a beta: the new baseline's time constant is a first-pass guess, not
+tuned against a fleet of real drives. Feedback on how it feels is very
+welcome via the issue tracker.
