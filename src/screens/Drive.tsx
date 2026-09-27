@@ -19,6 +19,20 @@ import type { Theme } from '../theme';
 const KEEP_AWAKE_TAG = 'drivewell-drive';
 
 /**
+ * How often the leaf actually repaints, milliseconds — deliberately far
+ * below the accelerometer's own rate. A repaint redraws Leaf's native SVG
+ * radial gradient, real work that (measured via a real drive's debug
+ * capture) was expensive enough at 50 Hz to bottleneck the JS thread and
+ * starve the accelerometer listener itself: the capture showed the
+ * *engine's* effective sample rate collapsing to a sustained ~5 Hz instead
+ * of the requested 50 Hz for long stretches, undersampling real harsh
+ * braking/acceleration events into invisibility. `engine.push` and
+ * `capture.push` below still run on every raw sample — only the
+ * setState-triggered repaint is throttled.
+ */
+const UI_REFRESH_MS = 100;
+
+/**
  * Drive is the main screen: the leaf, live while driving, a summary once
  * stopped. Gamification lives entirely in the leaf's color and the live
  * percentage score — no separate "level up" ceremony to build or maintain.
@@ -39,6 +53,8 @@ export function DriveScreen() {
   const engineRef = useRef<SmoothnessEngine | null>(null);
   const subscriptionRef = useRef<MotionSubscription | null>(null);
   const startedAtRef = useRef('');
+  const lastUiUpdateRef = useRef(0);
+  const uiFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +79,10 @@ export function DriveScreen() {
   useEffect(() => {
     return () => {
       subscriptionRef.current?.stop();
+      if (uiFlushTimerRef.current !== null) {
+        clearTimeout(uiFlushTimerRef.current);
+        uiFlushTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -76,14 +96,36 @@ export function DriveScreen() {
     setLastTrip(null);
     setMilestone(null);
     setDriving(true);
+    lastUiUpdateRef.current = 0;
+    if (uiFlushTimerRef.current !== null) {
+      clearTimeout(uiFlushTimerRef.current);
+      uiFlushTimerRef.current = null;
+    }
     const capture = startCapture();
+    const flushUi = () => {
+      lastUiUpdateRef.current = Date.now();
+      setSmoothness(engine.smoothness);
+      setLive(engine.live);
+      setSeconds(engine.seconds);
+    };
     try {
       subscriptionRef.current = await startMotion((sample) => {
         engine.push(sample);
-        setSmoothness(engine.smoothness);
-        setLive(engine.live);
-        setSeconds(engine.seconds);
         capture.push({ t: sample.t, x: sample.x, y: sample.y, z: sample.z, ...engine.debugSnapshot });
+
+        const elapsed = Date.now() - lastUiUpdateRef.current;
+        if (elapsed >= UI_REFRESH_MS) {
+          if (uiFlushTimerRef.current !== null) {
+            clearTimeout(uiFlushTimerRef.current);
+            uiFlushTimerRef.current = null;
+          }
+          flushUi();
+        } else if (uiFlushTimerRef.current === null) {
+          uiFlushTimerRef.current = setTimeout(() => {
+            uiFlushTimerRef.current = null;
+            flushUi();
+          }, UI_REFRESH_MS - elapsed);
+        }
       });
     } catch (err) {
       setDriving(false);
@@ -98,6 +140,10 @@ export function DriveScreen() {
   async function stop(): Promise<void> {
     subscriptionRef.current?.stop();
     subscriptionRef.current = null;
+    if (uiFlushTimerRef.current !== null) {
+      clearTimeout(uiFlushTimerRef.current);
+      uiFlushTimerRef.current = null;
+    }
     const engine = engineRef.current;
     engineRef.current = null;
     setDriving(false);
