@@ -1,0 +1,22 @@
+Fixed the leaf choking itself off the accelerometer.
+
+A real drive's debug export showed the accelerometer's effective sample rate
+collapsing from the requested 50 Hz to a sustained ~5 Hz for long stretches
+mid-drive — undersampling genuinely harsh braking and acceleration into
+invisibility, so a real hard stop could pass with barely a dent in the
+score. The cause: every single accelerometer sample was triggering a full
+screen re-render, including the leaf's native SVG glow redraw, which was
+apparently enough work at 50 Hz to bottleneck the JS thread and starve the
+sensor listener itself.
+
+The scoring engine now sees every raw sample same as before; only the
+leaf's repaint is capped, to 10 times a second — plenty for something you
+glance at while driving.
+
+If you've felt the score stay suspiciously smooth through a drive that
+didn't feel smooth at all, this should fix it. A fresh "Export last drive"
+from a real drive, compared against one from before this build, is the
+best way to confirm — very welcome via the issue tracker either way.
+
+Still a beta: scoring constants remain a first calibration pass, not tuned
+against a fleet of real drives.
