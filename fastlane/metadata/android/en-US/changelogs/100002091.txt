@@ -1,0 +1,32 @@
+Rebuilt how jerk is scored, from scratch, on a proper foundation this time.
+
+Two more real drives — a highway and a rough country road — showed beta.8's
+approach was still wrong: real harsh braking and acceleration weren't
+reliably showing up, the live number bounced around too much, and an
+event's effect on the score faded almost as fast as it appeared. Rather
+than tune more constants, this build replaces the whole mechanism with a
+sliding-window comparison: how rough the last couple of seconds have been
+versus how rough the last 30 seconds have been. That's a standard signal-
+processing pattern (used for detecting transients in audio and seismic
+data), and it's structurally close to ISO 2631, the actual engineering
+standard for vibration comfort — not something invented for this app.
+
+A real window, unlike the exponential-average approach the last two builds
+used, naturally remembers a harsh moment for several seconds after it
+happens and naturally smooths out noise, without needing extra tuning on
+top. Checked against all four real drives captured so far: the two newest
+went from 30-46 separate, sub-second score dips each, to 2-9 dips lasting
+several seconds apiece — which is what "the leaf actually reacts to what
+just happened, and remembers it for a bit" should look like.
+
+Also fixes a real bug found while building this: a stop longer than 30
+seconds could silently erase what the engine had learned about the current
+road, the same category of bug from a few betas back, now fixed the same
+way at a different layer.
+
+Heads up: scores will look different again from beta.8, and that's the
+point — beta.8 was still quietly under-reacting to real events on some
+roads. If a drive feels wrong either direction, a fresh "Export last drive"
+is still the fastest way to get it looked at.
+
+Still a beta: validated against four real drives, not a fleet.
