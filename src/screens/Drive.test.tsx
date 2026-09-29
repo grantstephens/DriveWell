@@ -109,7 +109,11 @@ test('ending a drive stops the subscription and persists a trip', async () => {
   expect(motion.stop).toHaveBeenCalled();
   const trips = await store.trips();
   expect(trips).toHaveLength(1);
-  expect(trips[0]!.score).toBeGreaterThanOrEqual(99);
+  // score is a time-weighted average over the whole 10 s, including the
+  // jerk baseline's own first couple of seconds settling in from a
+  // standing start — see scoring.test.ts's equivalent case for why this
+  // isn't quite 99+ despite the drive itself being perfectly smooth.
+  expect(trips[0]!.score).toBeGreaterThanOrEqual(98);
 });
 
 test('the idle screen shows a lifetime average, not points, and the last trip has no points suffix', async () => {

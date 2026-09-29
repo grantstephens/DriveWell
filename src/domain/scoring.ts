@@ -31,11 +31,19 @@
  *   hard corner or a foot resting on the brake shows low jerk but high
  *   sustained.
  *
- * roughness combines them (sustained is scaled to g/s-equivalents; jerk is
- * scored only above a slow adaptive baseline — see JERK_BASELINE_TC_S — so
- * persistent ambient vibration stops counting as roughness once it's been
- * around long enough to be "normal" for this drive), and smoothness is the
- * linear falloff from 100 at rest to 0 at BROWN_ROUGHNESS.
+ * roughness combines them. jerk is judged not against a fixed g/s ceiling
+ * but against a rolling *robust z-score*: how many typical deviations above
+ * a slow-moving center-of-normal it currently is (see BASELINE_TC_S). This
+ * is what lets the same engine work on a silky-smooth new road and a
+ * chip-sealed rural one without retuning — "normal" is whatever this drive's
+ * own baseline says it is, and only genuine excess above that self-learned
+ * normal counts as roughness. sustained gets no such baseline (scaled
+ * straight to a g/s-equivalent penalty): a steady g-force is a choice — hard
+ * cornering, trail-braking — not ambient texture, and must never be
+ * "learned" as normal. Each path is its own fraction of "fully rough" — jerk
+ * via JERK_Z_CEILING, sustained via SUSTAINED_ROUGHNESS_CEILING — and
+ * smoothness is the linear falloff from 100 at rest to 0 once those
+ * fractions sum to 1.
  *
  * `score` is the trip-so-far time-weighted average of smoothness — but
  * only over time proven *live*. An accelerometer cannot tell "parked" from
@@ -91,8 +99,18 @@ export interface AccelSample {
  */
 const SIGNAL_TC_S = 0.15;
 
-/** EMA time constant, seconds, applied to jerk/sustained themselves. */
-const EMA_TC_S = 3;
+/**
+ * EMA time constant, seconds, applied to jerk/sustained themselves — just
+ * enough to reject genuine single-sample ADC/mount noise before it reaches
+ * the robust baseline below. Deliberately short: real driving events (half
+ * a second to two seconds, per the module doc) must not be smoothed away
+ * before they even get compared against "normal". Protecting the *baseline*
+ * from being corrupted by a real event is the robust center/spread's job
+ * (see BASELINE_TC_S), not this constant's — that used to be conflated into
+ * one long EMA, which is exactly what diluted brief harsh braking into
+ * invisibility.
+ */
+const EMA_TC_S = 0.4;
 
 /** Residual filtered jerk below this (g/s) is sensor/mount noise, not driving. */
 const JERK_FLOOR = 0.03;
@@ -103,21 +121,62 @@ const SUSTAINED_FLOOR = 0.02;
 /** How many g/s of sustained offset equals 1 g/s of jerk, penalty-wise. */
 const SUSTAINED_WEIGHT = 3;
 
-/** roughness at and above which smoothness is 0. */
-const BROWN_ROUGHNESS = 2.0;
+/**
+ * Sustained roughness units (SUSTAINED_WEIGHT * dynEma) at and above which
+ * smoothness is 0 on the sustained path alone. dynEma has no baseline — a
+ * steady g-force is a driver's choice, not road texture, so it is never
+ * judged relative to "what's normal," only against this fixed physical
+ * ceiling (unchanged from the original single-ceiling design: ~0.67 g of
+ * sustained deviation is enough to tank it on its own).
+ */
+const SUSTAINED_ROUGHNESS_CEILING = 2.0;
 
 /**
- * Time constant, seconds, for a second-stage EMA of jerkEma itself,
- * tracking "what's been normal for this road/speed recently." Only the
- * excess of jerkEma above this baseline counts as roughness — see the
- * module doc for why frequency alone can't separate real events from
- * ambient vibration, and why persistence duration can: real events elevate
- * jerkEma for a few seconds; ambient vibration elevates it for the whole
- * drive. A first-pass guess, like every other constant here — the
- * documented tradeoff is that continuously harsh driving sustained *longer*
- * than this window gradually reads as the new normal too.
+ * The jerk z-score (see BASELINE_TC_S) at and above which smoothness is 0 on
+ * the jerk path alone. Combined with SUSTAINED_ROUGHNESS_CEILING as two
+ * independent fractions-of-full-roughness, not one shared scale — z-scores
+ * and raw g/s aren't the same unit, and forcing them through a single
+ * ceiling let a sustained hard brake silently borrow the jerk side's (much
+ * larger) headroom. Calibrated against a real 13-minute drive's
+ * full-resolution capture: the 99.9th percentile of jerk z-scores across
+ * ordinary driving on that route was ~6, and its single most extreme moment
+ * (a real, sharp jolt) reached ~9 — this sits just under that peak, so only
+ * genuinely rare, anomalous moments reach 0, not merely "one of the rougher
+ * patches of this specific road."
  */
-const JERK_BASELINE_TC_S = 20;
+const JERK_Z_CEILING = 8;
+
+/**
+ * Time constant, seconds, for the jerk baseline's rolling *center* and
+ * *spread* (a mean-absolute-deviation, EMA-approximated). Together these are
+ * "what's normal for this road/speed recently, and how much does it
+ * naturally vary" — jerk is judged in units of spread (a z-score), not raw
+ * g/s, which is what lets the same threshold work on a glassy new road and a
+ * washboard gravel one without retuning per drive: on the glassy road,
+ * spread stays tiny, so even a small excursion reads as anomalous; on the
+ * washboard road, spread is naturally larger, so it takes a proportionally
+ * bigger excursion to register the same way. Slow enough that a real event
+ * (a few seconds) barely moves either estimate before it's over; genuinely
+ * sustained roughness (this window's-worth or more) gradually pulls both up,
+ * which is the same accepted "eventually reads as normal" tradeoff the old
+ * single-baseline design had — now it applies to variability, not just
+ * level. A first-pass guess like every constant here, but no longer a
+ * *fragile* one: absolute noise levels can be an order of magnitude off
+ * between two real roads (confirmed by two real captures) without needing
+ * to retune BASELINE_TC_S or JERK_Z_CEILING, because both are expressed
+ * relative to the road's own learned spread, not an absolute g/s guess.
+ */
+const BASELINE_TC_S = 22;
+
+/**
+ * Minimum assumed jerk spread (g/s), floors BASELINE_TC_S's rolling spread
+ * estimate. Without this, a handful of seconds of near-perfectly-smooth
+ * driving right after a trip starts (spread still close to its zero initial
+ * value) would make even ordinary sensor noise look infinitely anomalous —
+ * dividing by a near-zero spread. Same role JERK_FLOOR plays one stage
+ * earlier, at the z-score stage instead of the raw-signal stage.
+ */
+const JERK_SPREAD_FLOOR = 0.06;
 
 /**
  * Rolling time constant, seconds, for the liveness-activity EMA. Long
@@ -180,7 +239,8 @@ export class SmoothnessEngine {
   private dynEma = 0;
   private activityEma = 0;
   private activityPowerEma = 0;
-  private jerkBaseline: number | null = null;
+  private jerkCenter: number | null = null;
+  private jerkSpread = 0;
   private smoothnessWeighted = 0;
   private secondsAcc = 0;
   private liveSecondsAcc = 0;
@@ -214,17 +274,27 @@ export class SmoothnessEngine {
     this.activityEma += activityAlpha * (activityLevel - this.activityEma);
     this.activityPowerEma += activityAlpha * (activityLevel * activityLevel - this.activityPowerEma);
 
-    if (this.jerkBaseline === null) {
-      this.jerkBaseline = this.jerkEma;
-    } else if (this.live) {
-      // Frozen while not live: a genuinely silent stop (a red light, engine
-      // off) must not erase what the baseline learned about the current
-      // road — decaying it here would reintroduce this file's whole reason
-      // for existing on the very next stretch of driving, for any
-      // stop-and-go trip. Resuming re-teaches it fast anyway (see the
-      // "recovers toward 100" test), so freezing costs nothing real.
-      const baselineAlpha = dt / (JERK_BASELINE_TC_S + dt);
-      this.jerkBaseline += baselineAlpha * (this.jerkEma - this.jerkBaseline);
+    if (this.jerkCenter === null) {
+      this.jerkCenter = this.jerkEma;
+    } else if (activityLevel >= LIVENESS_EPSILON) {
+      // Gated on *this instant's* raw activity, not the hysteretic `live`
+      // getter below. `live` is deliberately sticky — it stays true for a
+      // grace period after a real stop so a red light doesn't pause score
+      // accumulation — but that stickiness is exactly wrong here: while
+      // jerkEma decays toward 0 during that same grace window, a baseline
+      // still gated on `live` keeps chasing it down, eroding most of what
+      // it learned before it finally freezes (confirmed against a real
+      // capture: an 85% loss). Gating on the instantaneous level instead
+      // means the baseline freezes the moment real activity actually stops,
+      // not up to ~30s later — a genuinely silent stop (a red light, engine
+      // off) must not erase what it learned about the current road, or the
+      // very next stretch of driving relearns it from scratch. Resuming
+      // re-teaches it fast anyway (see the "recovers toward 100" test), so
+      // freezing promptly costs nothing real.
+      const baselineAlpha = dt / (BASELINE_TC_S + dt);
+      const deviation = this.jerkEma - this.jerkCenter;
+      this.jerkCenter += baselineAlpha * deviation;
+      this.jerkSpread += baselineAlpha * (Math.abs(deviation) - this.jerkSpread);
     }
 
     const smoothness = this.smoothnessNow();
@@ -302,9 +372,9 @@ export class SmoothnessEngine {
   }
 
   private smoothnessNow(): number {
-    const excessJerk = Math.max(0, this.jerkEma - (this.jerkBaseline ?? this.jerkEma));
-    const roughness = excessJerk + SUSTAINED_WEIGHT * this.dynEma;
-    return Math.min(100, Math.max(0, 100 * (1 - roughness / BROWN_ROUGHNESS)));
+    const zJerk = Math.max(0, (this.jerkEma - (this.jerkCenter ?? this.jerkEma)) / Math.max(this.jerkSpread, JERK_SPREAD_FLOOR));
+    const roughness = zJerk / JERK_Z_CEILING + (SUSTAINED_WEIGHT * this.dynEma) / SUSTAINED_ROUGHNESS_CEILING;
+    return Math.min(100, Math.max(0, 100 * (1 - roughness)));
   }
 
   /**
@@ -316,7 +386,8 @@ export class SmoothnessEngine {
     return {
       filteredMag: this.filteredMag,
       jerkEma: this.jerkEma,
-      jerkBaseline: this.jerkBaseline,
+      jerkCenter: this.jerkCenter,
+      jerkSpread: this.jerkSpread,
       dynEma: this.dynEma,
       activityEma: this.activityEma,
       smoothness: this.smoothnessNow(),

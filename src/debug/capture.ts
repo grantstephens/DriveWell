@@ -21,6 +21,8 @@ export interface CaptureRow {
   z: number;
   filteredMag: number | null;
   jerkEma: number;
+  jerkCenter: number | null;
+  jerkSpread: number;
   dynEma: number;
   activityEma: number;
   smoothness: number;
