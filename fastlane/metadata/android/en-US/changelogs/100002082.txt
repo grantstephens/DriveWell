@@ -1,0 +1,33 @@
+Redesigned how jerk is scored — real harsh events should actually register now.
+
+A follow-up debug export (this time captured with beta.7's fix, so genuinely
+sampled at ~50 Hz) showed the same complaint persisting: real, sharp braking
+and acceleration events barely dented the score. The cause this time wasn't
+sampling, it was the scoring model itself — jerk was judged against a single
+hand-picked absolute threshold, fitted to whatever one earlier drive's
+ambient road noise happened to look like, with no reason to generalize to a
+rougher or smoother road.
+
+Jerk is now judged against a rolling, self-learned "normal for this drive"
+— how many typical deviations above it the current reading is, not a fixed
+number. This adapts to the actual road instead of needing to be retuned
+every time someone reports it feels off. Checked against two real drives
+with very different ambient noise levels: same approach worked for both
+without touching a constant, and events that previously barely dropped
+the score (94-99%) now read as 0-47%, in proportion to how rough they
+actually were.
+
+Also fixes a bug found while chasing this down: the "baseline survives a
+stop" protection from a couple of betas back was quietly leaking — for
+about 30 seconds after a real stop, it kept adjusting to the dying-down
+signal before finally freezing, eroding most of what it had learned. Fixed
+at the root.
+
+Heads up: trip scores will read noticeably lower than beta.7 for the same
+driving — roughly 5 points lower on both drives used to validate this. Not
+a regression: the score is now honestly reflecting events beta.7 (and
+everything before it) was quietly hiding.
+
+Still a beta: validated against two real drives, not a fleet. If a genuinely
+smooth drive scores lower than it should, or a rough one still reads too
+high, a fresh "Export last drive" is the fastest way to get it looked at.
