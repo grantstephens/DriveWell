@@ -1,4 +1,4 @@
-import { Accelerometer } from 'expo-sensors';
+import { Accelerometer, Gyroscope } from 'expo-sensors';
 
 import type { MotionSample, MotionSubscription } from './motion';
 
@@ -18,12 +18,30 @@ export async function startMotion(
     throw new Error('No accelerometer on this device');
   }
   Accelerometer.setUpdateInterval(SAMPLE_INTERVAL_MS);
+
+  // The gyroscope is a bonus: it tells the end-of-drive breakdown which way
+  // is forward. Any trouble with it must never cost the drive itself.
+  let rotation: { x: number; y: number; z: number } | null = null;
+  let gyroSubscription: { remove(): void } | null = null;
+  try {
+    if (await Gyroscope.isAvailableAsync()) {
+      Gyroscope.setUpdateInterval(SAMPLE_INTERVAL_MS);
+      gyroSubscription = Gyroscope.addListener(({ x, y, z }) => {
+        rotation = { x, y, z };
+      });
+    }
+  } catch {
+    gyroSubscription = null;
+  }
+
   const subscription = Accelerometer.addListener(({ x, y, z }) => {
-    onSample({ x, y, z, t: Date.now() });
+    const t = Date.now();
+    onSample(rotation ? { x, y, z, t, gx: rotation.x, gy: rotation.y, gz: rotation.z } : { x, y, z, t });
   });
   return {
     stop() {
       subscription.remove();
+      gyroSubscription?.remove();
     },
   };
 }

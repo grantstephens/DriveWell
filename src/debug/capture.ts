@@ -19,6 +19,10 @@ export interface CaptureRow {
   x: number;
   y: number;
   z: number;
+  /** Most recent gyroscope reading (rad/s), when the phone has one. */
+  gx?: number;
+  gy?: number;
+  gz?: number;
   filteredMag: number | null;
   jerkShortRms: number;
   jerkLongRms: number;

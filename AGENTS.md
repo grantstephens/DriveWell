@@ -53,10 +53,11 @@ except `App.tsx`.
 
 | Directory | Role |
 |---|---|
-| `src/domain` | Domain only: the `SmoothnessEngine` (accelerometer samples in, a live score out), `leafColor`, `Trip`, the `Store` interface, `computeStats`, and duration formatting. Imports nothing external — no React, no Expo — which is why it runs in a plain Node Jest environment. |
+| `src/domain` | Domain only: the `SmoothnessEngine` (accelerometer samples in, a live score out), `DriveBreakdown` (the end-of-drive braking/cornering/acceleration traffic lights) and `formatShareText` (the Wordle-style share card), `leafColor`, `Trip`, the `Store` interface, `computeStats`, and duration formatting. Imports nothing external — no React, no Expo — which is why it runs in a plain Node Jest environment. |
 | `src/storage` | `SqliteStore` (via `expo-sqlite`/`node:sqlite`), held to a behavioural contract (`storeContract.ts`) so the device implementation can never drift from what the tests actually exercise. |
 | `src/screens` | Drive (the leaf), Stats, Settings. |
-| `src/platform` | The one thing that genuinely differs per build: the accelerometer (`motion.*`) and the confirm/alert dialog (`confirm.*`, native-only by design — there is no web target to branch on). |
+| `src/platform` | The one thing that genuinely differs per build: the motion sensors (`motion.*` — the accelerometer, plus the gyroscope where the phone has one, delivered as one sample stream) and the confirm/alert dialog (`confirm.*`, native-only by design — there is no web target to branch on). |
+| `src/components/TrafficLights.tsx` | The three end-of-drive lights (braking, cornering, acceleration). Real traffic-light colours, deliberately not theme colours, for the same reason the leaf isn't themed. |
 | `src/components/Leaf.tsx` | The leaf's artwork: `MaterialIcons`'s "eco" glyph, tinted by the caller, plus an SVG radial-gradient glow that intensifies with smoothness². Every color decision lives in `domain/leaf.ts` — this component only draws it, entirely independent of the app's own Material theme below (the leaf communicates driving quality, not brand identity). |
 | `src/theme.ts` | The whole app's Material Design 3 theme (`react-native-paper`), generated from one seed color — the leaf's own lush-green stop — via `@material/material-color-utilities` (Google's pure-JS MD3 color algorithm; deliberately not a package that bundles native code for *system* wallpaper theming, which this app has no use for). Every screen reads colors through `useTheme()` from `react-native-paper`, not a custom context — there is no `ThemeContext.tsx`. |
 | `App.tsx` / `DriveContext.tsx` | `PaperProvider` + a Material 3 bottom navigation bar (`BottomNavigation.Bar`, the documented react-native-paper/react-navigation integration pattern) bootstrapped from `useColorScheme()` directly — no stored override, see "Deliberate simplifications" below. Also: store bootstrap, the error screen, and the `revision` counter every write path bumps so Stats and the Drive screen's lifetime-average readout stay in sync. |
@@ -83,6 +84,19 @@ except `App.tsx`.
   the accelerometer reading's total magnitude (`Math.hypot(x, y, z)`), never a single
   axis, specifically so it doesn't matter where in the car the phone is mounted. Do not
   reintroduce axis-specific logic without re-deriving this property.
+- **`DriveBreakdown` is the one axis-aware component, and it is kept apart on purpose.**
+  Telling braking from cornering needs to know which way is forward, so it works the
+  car's axes out *from the drive itself* (gravity → horizontal plane → the gyroscope's
+  yaw rate identifies sideways, forward follows by the right-hand rule; principal-component
+  analysis as a one-sensor fallback that answers "unknown" rather than guess when the axes
+  are ambiguous). It only feeds the end-of-drive card and never the live score. It is
+  validated by synthetic drives rotated into arbitrary phone orientations; **the gyro
+  path has not yet been validated against a real drive** (the debug export logs gyro
+  now, precisely so it can be) — check the braking-vs-acceleration sign convention
+  against real captures before trusting it.
+- **The breakdown is not persisted.** It is only needed for the drive that just ended
+  (the share card), so `Trip` and the schema are untouched. Sharing goes through React
+  Native's built-in `Share` (plain text), so there is no new native dependency.
 - **The raw magnitude is low-pass filtered *before* differencing, never read
   directly.** A phone in a moving car picks up engine/road vibration in the
   tens-of-Hz range; sampled at ~10-50 Hz that aliases into false jerk
@@ -112,21 +126,29 @@ except `App.tsx`.
   though `live` stays true. See the "the liveness gate" describe block in
   `scoring.test.ts` for the exact behavior, including the bounded grace
   period that keeps an ordinary traffic stop from pausing accumulation, and
-  the jerk baseline (below) freezing rather than decaying while not live.
-- **The jerk roughness signal is scored against an adaptive baseline, not
-  a fixed floor.** Real motorway vibration (measured 2.3-3.5 Hz) sits too
-  close to the driving-event frequency band for a low-pass filter alone to
-  reject it — captured highway data showed `jerkEma` sitting at a steady
-  0.4-0.5 g/s for an entire cruise, 15x `JERK_FLOOR`, with the single
-  largest real event in either capture only 40-80% above the ambient
-  floor. `JERK_BASELINE_TC_S` tracks "what's been normal for this road
-  recently" and only the excess above it counts as roughness — see
-  `domain/scoring.ts`'s module doc for the full derivation. Accepted,
-  tested tradeoff: continuously harsh driving sustained *longer* than this
-  window is gradually forgiven too; the baseline freezes (rather than
-  decaying) while not live specifically so a genuinely silent stop doesn't
-  erase what it learned and reintroduce the same motorway bug on the next
-  stretch of driving.
+  the long jerk window (below) freezing rather than filling with zeros while not active.
+- **Jerk is scored by a short-window/long-window RMS ratio, not a fixed floor or an
+  absolute ceiling.** Real motorway vibration (measured 2.3-3.5 Hz) sits too close to
+  the driving-event frequency band for a low-pass filter alone to reject it — captured
+  highway data showed jerk sitting at a steady 0.4-0.9 g/s for an entire cruise, 15x
+  `JERK_FLOOR`, the same range genuine harsh events reach. So `SmoothnessEngine` compares
+  the last `SHORT_WINDOW_S` of jerk (sliding-window RMS, `SlidingRms` — a real ring
+  buffer, not an EMA) against the last `JERK_LONG_WINDOW_S`, and only the excess counts.
+  A real window is well-defined from the first sample and naturally smooths noise and
+  remembers a harsh moment for a few seconds; this replaced an EMA-plus-adaptive-baseline
+  design whose fresh baseline started at zero (false early dips), which could silently
+  absorb a sharp event on a road that was already rough, and which forgot an event
+  almost as fast as it happened. **An absolute-ceiling "escape hatch" was tried and
+  deliberately dropped**: any ceiling loose enough to leave that motorway alone is too
+  loose to catch anything on a rough road, and any tighter one flags ordinary highway
+  driving as permanently rough. Accepted, documented tradeoff: on a road that's already
+  been rough for `JERK_LONG_WINDOW_S`, a further event must be proportionally larger to
+  register. The long window is fed only while there is *instantaneous* activity (not the
+  sticky `live` flag), so a stop longer than the window can't erase what it knew about
+  the road, and it starts seeded with `JERK_LONG_RMS_SEED_S` of assumed-quiet history so a
+  drive that is harsh from its first second still has something to contrast against.
+  Jerk from the first `JERK_FILTER_SETTLE_S` is ignored (the low-pass filter's own
+  settling transient). See `domain/scoring.ts`'s module doc for the full derivation.
 - **`score` and `smoothness` getters are read-only derived state.** Nothing
   outside `SmoothnessEngine` mutates the running averages; a screen just pushes samples
   and reads the getters after each one.

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { Share } from 'react-native';
 import { PaperProvider } from 'react-native-paper';
 
 import { DriveProvider } from '../DriveContext';
@@ -154,6 +155,7 @@ test('a trip shorter than the minimum is discarded, not saved', async () => {
   await waitFor(() => expect(screen.getByTestId('drive-start')).toBeTruthy());
 
   await expect(store.trips()).resolves.toEqual([]);
+  expect(screen.queryByTestId('drive-summary')).toBeNull();
 });
 
 // Found in final review: a phone left on a table for a while racks up
@@ -175,6 +177,7 @@ test('a long-enough-by-the-clock but never-live "drive" is discarded, not saved 
   await waitFor(() => expect(screen.getByTestId('drive-start')).toBeTruthy());
 
   await expect(store.trips()).resolves.toEqual([]);
+  expect(screen.queryByTestId('drive-summary')).toBeNull();
 });
 
 test('a missing accelerometer surfaces a notification instead of crashing', async () => {
@@ -251,6 +254,70 @@ test('a first-ever trip shows no personal-best toast — there is no prior recor
   await fireEvent.press(screen.getByTestId('drive-stop'));
   await waitFor(() => expect(screen.getByTestId('drive-start')).toBeTruthy());
   expect(screen.queryByTestId('drive-milestone')).toBeNull();
+});
+
+/** Ends a smooth 10 s drive and leaves the screen on its post-drive summary. */
+async function finishSmoothDrive(): Promise<void> {
+  const motion = fakeMotion();
+  await renderDrive(store);
+  await fireEvent.press(screen.getByTestId('drive-start'));
+  await waitFor(() => expect(screen.getByTestId('drive-stop')).toBeTruthy());
+  for (let i = 0; i <= 100; i++) {
+    motion.push({ x: 0, y: 0, z: 1 + (i % 2 === 0 ? 0.01 : -0.01), t: i * 100 });
+  }
+  await fireEvent.press(screen.getByTestId('drive-stop'));
+  await waitFor(() => expect(screen.getByTestId('drive-start')).toBeTruthy());
+}
+
+test('ending a drive shows a braking / cornering / acceleration traffic-light summary', async () => {
+  await finishSmoothDrive();
+
+  expect(screen.getByTestId('drive-summary')).toBeTruthy();
+  // A perfectly gentle drive has nothing to flag: all three lights green.
+  expect(screen.getByTestId('light-braking').props.accessibilityLabel).toBe('Braking: green');
+  expect(screen.getByTestId('light-cornering').props.accessibilityLabel).toBe('Cornering: green');
+  expect(screen.getByTestId('light-acceleration').props.accessibilityLabel).toBe('Acceleration: green');
+});
+
+test('the summary can be shared as a Wordle-style card through the OS share sheet', async () => {
+  const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction });
+  await finishSmoothDrive();
+
+  await fireEvent.press(screen.getByTestId('drive-share'));
+
+  expect(share).toHaveBeenCalledTimes(1);
+  const message = share.mock.calls[0]![0].message as string;
+  expect(message).toContain('DriveWell #1');
+  expect(message).toContain('🟢 Braking');
+  expect(message).toContain('🟢 Cornering');
+  expect(message).toContain('🟢 Acceleration');
+  share.mockRestore();
+});
+
+test('the trip number counts up through the driving history', async () => {
+  await store.putTrip({
+    startedAt: '2026-01-01T00:00:00Z',
+    endedAt: '2026-01-01T00:10:00Z',
+    seconds: 600,
+    score: 80,
+  });
+  const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction });
+  await finishSmoothDrive();
+
+  await fireEvent.press(screen.getByTestId('drive-share'));
+
+  expect((share.mock.calls[0]![0].message as string)).toContain('DriveWell #2');
+  share.mockRestore();
+});
+
+test('a share that fails surfaces a notification instead of crashing', async () => {
+  const share = jest.spyOn(Share, 'share').mockRejectedValue(new Error('no share targets'));
+  await finishSmoothDrive();
+
+  await fireEvent.press(screen.getByTestId('drive-share'));
+
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('Could not share', 'no share targets'));
+  share.mockRestore();
 });
 
 test('the leaf turns brown as the drive gets rougher', async () => {

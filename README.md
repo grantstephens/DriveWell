@@ -1,7 +1,7 @@
 # DriveWell
 
 Drive with this app open and it scores how smooth you are, using nothing but your
-phone's accelerometer. A leaf on screen turns from dormant brown through yellow to
+phone's motion sensors (the accelerometer, plus the gyroscope if it has one). A leaf on screen turns from dormant brown through yellow to
 lush green as your driving smooths out, alongside a live percentage score. Smooth
 driving is efficient driving — this is a nudge toward more of it.
 
@@ -44,13 +44,15 @@ app is signed with the project's own key rather than distributed through Play.
 > only because the React Native template bakes it in. Everything sensor-related
 > (`ACTIVITY_RECOGNITION` and friends, pulled in transitively by `expo-sensors`) is
 > explicitly blocked. Check any release for yourself with `aapt dump permissions <apk>`.
+> (The gyroscope, like the accelerometer, needs no permission at this sample rate.)
 
 ## Using it
 
 Three screens:
 
 - **Drive** — the leaf. Tap **Start Drive** before you pull off; the leaf tracks your
-  smoothness live. Tap **End Drive** when you arrive to save the trip and see its score.
+  smoothness live. Tap **End Drive** when you arrive to save the trip, see its score and a
+  braking/cornering/acceleration traffic light, and share it.
 - **Stats** — your lifetime average, best drive, total time behind the wheel, and a
   "your last 5 drives vs. the 5 before" trend so you can see whether you're actually
   getting smoother.
@@ -63,16 +65,39 @@ DriveWell reads the accelerometer's total magnitude — orientation-independent,
 doesn't matter where in the car the phone is mounted. Two things move that magnitude
 away from a resting 1 g: **jerk** (how fast acceleration is changing — hard braking,
 throttle stabs, swerves, potholes) and **sustained** acceleration (steady-state, like a
-long hard corner). Both are smoothed with a multi-second exponential average, so a
-single pothole doesn't tank your score — but a whole rough drive will. Jerk is scored
-against a slow adaptive baseline rather than a fixed floor, so persistent ambient road
-vibration settles in as "normal" for that drive instead of permanently capping your
-score — only genuine harsh events, and driving-force changes that outpace the baseline,
-still tank it.
+long hard corner). Both are measured as a root-mean-square over a sliding window (the
+same shape ISO 2631, the vibration-comfort standard, uses), so a single pothole doesn't
+tank your score, a real event lingers for a few seconds instead of vanishing, and the
+number doesn't jitter. Jerk over the last couple of seconds is compared with jerk over
+the last half-minute, so persistent ambient road vibration settles in as "normal" for
+that drive instead of permanently capping your score — only genuine harsh events, and
+driving-force changes that stand out from the recent road, still tank it. Sustained
+g-force is never treated as normal: a steady hard corner is a choice, not road texture.
 
-The constants behind that mapping are first-pass calibration from accelerometer
-physics, not tuned against real fleets of drives — see the comments in
-`src/domain/scoring.ts` if you want to adjust them.
+The constants behind that mapping are first-pass calibration against a handful of real
+drives, not a fleet — see the comments in `src/domain/scoring.ts` if you want to
+adjust them.
+
+### The end-of-drive card
+
+When you end a drive you also get a traffic light — green, amber or red — for each of
+**braking, cornering and acceleration**, and a Share button that hands a short,
+Wordle-style text card to your phone's share sheet:
+
+```
+🍃 DriveWell #12 · 91%
+🟢 Braking
+🟡 Cornering
+🔴 Acceleration
+```
+
+Telling those three apart means knowing which way is forward, which the phone can't
+know from where it's mounted, so `src/domain/breakdown.ts` works it out from the drive
+itself: it estimates gravity, keeps the horizontal force, and uses the gyroscope's yaw
+rate to find the sideways axis (forward, and so braking versus acceleration, follows
+from geometry). A phone without a gyroscope falls back to a weaker one-sensor estimate
+and shows a grey circle rather than a guess when it can't tell the axes apart. The
+card contains no time or place — just the trip's number in your own history.
 
 ### Your data
 
@@ -97,13 +122,15 @@ Android is the only shipping target — there's no accelerometer to read in a br
 ### Layout
 
 ```
-src/domain/       pure TypeScript: the scoring engine, leaf color, trips, stats, the
-                  Store contract — no React, no Expo, tested in plain Node
+src/domain/       pure TypeScript: the scoring engine, the end-of-drive breakdown and
+                  share card, leaf color, trips, stats, the Store contract — no React,
+                  no Expo, tested in plain Node
 src/storage/      SqliteStore (expo-sqlite on device, node:sqlite in tests), one
                   behavioural contract run against both
 src/screens/      Drive, Stats, Settings
-src/platform/     the one thing that differs per target: the accelerometer (motion.*)
-src/components/   Leaf, the presentational SVG the Drive screen colors live
+src/platform/     the one thing that differs per target: the motion sensors (motion.*)
+src/components/   Leaf (the presentational SVG the Drive screen colors live) and
+                  TrafficLights (the end-of-drive braking/cornering/acceleration card)
 src/theme.ts, src/ThemeContext.tsx   light/dark palettes; follows the system setting
 ```
 

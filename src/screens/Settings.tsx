@@ -36,10 +36,11 @@ export function SettingsScreen() {
         <Card.Content style={styles.cardContent}>
           <Text variant="titleMedium">How scoring works</Text>
           <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-            DriveWell watches your phone's accelerometer while you drive. Sudden braking,
+            DriveWell watches your phone's motion sensors while you drive. Sudden braking,
             hard acceleration, and sharp cornering turn the leaf brown; a steady, gentle
-            touch turns it green — and pushes your live score toward 100%. Smooth driving
-            is efficient driving.
+            touch turns it green — and pushes your live score toward 100%. When a drive
+            ends you get a traffic light for each of braking, cornering and acceleration,
+            ready to share. Smooth driving is efficient driving.
           </Text>
         </Card.Content>
       </Card>
@@ -59,7 +60,7 @@ export function SettingsScreen() {
           <Card.Content style={styles.cardContent}>
             <Text variant="titleMedium">Export last drive</Text>
             <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-              Shares the raw accelerometer data and scoring internals from your most recent
+              Shares the raw sensor data and scoring internals from your most recent
               drive this session — useful for reporting a scoring issue or helping tune the
               algorithm. Nothing is sent automatically; you choose where it goes.
             </Text>
