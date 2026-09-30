@@ -48,6 +48,12 @@ interface Seg {
   along?: number;
   alat?: number;
   speed?: number;
+  /** Phone orientation for this stretch, overriding the drive's (a phone still being fiddled with). */
+  rot?: Mat;
+  /** Wall-clock seconds the sensors deliver nothing before this stretch (app in the background, say). */
+  gapBefore?: number;
+  /** The phone is being picked up and fiddled with: violent forces and rotation about horizontal axes. */
+  handled?: boolean;
 }
 
 const cruise = (s: number): Seg => ({ s });
@@ -76,17 +82,24 @@ function simulate(segs: Seg[], rot: Mat, withGyro = true): DriveSample[] {
   let k = 0;
   for (const seg of segs) {
     const n = Math.round(seg.s * HZ);
+    t += (seg.gapBefore ?? 0) * 1000;
     for (let i = 0; i < n; i++, k++) {
+      const fiddle = seg.handled ? Math.sin(k * 0.05) : 0;
       const carForce: Vec = [
-        (seg.along ?? 0) + (k % 2 === 0 ? 0.02 : -0.02),
-        (seg.alat ?? 0) + (k % 3 === 0 ? 0.02 : -0.02),
+        (seg.along ?? 0) + (k % 2 === 0 ? 0.02 : -0.02) + 0.7 * fiddle,
+        (seg.alat ?? 0) + (k % 3 === 0 ? 0.02 : -0.02) + 0.5 * Math.cos(k * 0.045) * (seg.handled ? 1 : 0),
         1 + (k % 2 === 0 ? -0.03 : 0.03),
       ];
-      const [x, y, z] = apply(rot, carForce);
+      const segRot = seg.rot ?? rot;
+      const [x, y, z] = apply(segRot, carForce);
       const sample: DriveSample = { x, y, z, t };
       if (withGyro) {
         const yawRate = ((seg.alat ?? 0) * G) / (seg.speed ?? 15);
-        const [gx, gy, gz] = apply(rot, [0, 0, yawRate + (k % 2 === 0 ? 0.004 : -0.004)]);
+        const [gx, gy, gz] = apply(segRot, [
+          seg.handled ? 2.5 * Math.sin(k * 0.09) : 0,
+          seg.handled ? 1.5 * Math.cos(k * 0.07) : 0,
+          yawRate + (k % 2 === 0 ? 0.004 : -0.004),
+        ]);
         sample.gx = gx;
         sample.gy = gy;
         sample.gz = gz;
@@ -154,6 +167,53 @@ describe.each(ORIENTATIONS)('with the phone $name', ({ rot }) => {
     expect(r.cornering.light).toBe('red');
     expect(r.braking).toEqual({ light: 'green', events: 0 });
     expect(r.acceleration).toEqual({ light: 'green', events: 0 });
+  });
+
+  // Found on a real drive: the phone was tilted about while being mounted and
+  // an online gravity estimate was still converging for the first minute,
+  // leaking ~0.16 g of tilt error into "forward" — false accelerations, and
+  // braking hidden. The estimate now comes from the whole drive, so a
+  // fiddly start costs nothing.
+  test('a phone still being tilted into its mount at the start does not fake harsh events', () => {
+    const start: Seg[] = [{ s: 4, rot: rotation(0.3, -0.5, 0.4) }];
+    const segs = [...start, ...ordinary()];
+    const r = analyse(simulate(segs, rot));
+    expect(r.braking).toEqual({ light: 'green', events: 0 });
+    expect(r.cornering).toEqual({ light: 'green', events: 0 });
+    expect(r.acceleration).toEqual({ light: 'green', events: 0 });
+  });
+
+  test('a long stretch with no sensor data does not disturb the rest of the drive', () => {
+    const segs = [...ordinary(), { s: 14, gapBefore: 400 }, ...longEvent(-0.4), cruise(10), ...longEvent(-0.4), cruise(8)];
+    const r = analyse(simulate(segs, rot));
+    expect(r.braking.events).toBe(2);
+    expect(r.acceleration.events).toBe(0);
+    expect(r.cornering.events).toBe(0);
+  });
+
+  // Found on a real drive: the app came back to the foreground after a long
+  // hole, the phone was picked up (2.4 rad/s of rotation about horizontal
+  // axes — driving never does that), and the resulting forces read as a cluster
+  // of harsh brake/corner events. The gyroscope can tell the difference.
+  test('picking the phone up mid-drive is not driving', () => {
+    const segs = [...ordinary(), cruise(6), { s: 4, handled: true }, cruise(10), ...ordinary()];
+    const r = analyse(simulate(segs, rot));
+    expect(r.braking).toEqual({ light: 'green', events: 0 });
+    expect(r.cornering).toEqual({ light: 'green', events: 0 });
+    expect(r.acceleration).toEqual({ light: 'green', events: 0 });
+  });
+
+  test('the first seconds after a hole in the sensor data are treated as settling, later ones count', () => {
+    const right = (gap: number, beforeEvent: number): Seg[] => [
+      ...ordinary(),
+      { s: 4, gapBefore: gap },
+      cruise(beforeEvent),
+      ...longEvent(-0.4),
+      cruise(10),
+    ];
+    // Event ~3 s after the app returns: ignored. ~20 s after: counted.
+    expect(analyse(simulate(right(120, 1), rot)).braking.events).toBe(0);
+    expect(analyse(simulate(right(120, 20), rot)).braking.events).toBe(1);
   });
 
   test('a phone bumped while being mounted, or tapped to end the drive, is not a harsh event', () => {

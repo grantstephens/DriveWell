@@ -13,14 +13,26 @@
  *
  * How, in order:
  *
- * 1. Gravity. A slow, self-protecting low-pass of the raw 3-axis reading
- *    gives "up" in the phone's own frame. It stops learning during sharp
- *    jolts and slows down while the car is accelerating hard, so the very
- *    forces being measured don't leak into the estimate of "up".
+ * 1. Gravity. The analysis runs once, at the end of the drive, so gravity is
+ *    taken from the whole drive: a rolling median of the smoothed 3-axis
+ *    reading (see gravityAt). Braking, accelerating and cornering push the
+ *    reading both ways and average out; a fixed phone's tilt does not. An
+ *    online low-pass estimate was tried first and failed on a real drive: the
+ *    phone was still being tilted into its mount, the estimate took a minute
+ *    to converge, and its ~0.16 g of tilt error leaked straight into
+ *    "forward" — false accelerations, hidden brakes. A median over the whole
+ *    trip has no startup transient at all.
  * 2. Horizontal force. Subtract gravity, drop the vertical component (bumps
- *    and potholes are the smoothness score's business, not this one's), and
- *    smooth what's left. What remains is the car's horizontal acceleration,
- *    expressed in the phone's arbitrary frame.
+ *    and potholes are the smoothness score's business, not this one's). What
+ *    remains is the car's horizontal acceleration, expressed in the phone's
+ *    arbitrary frame.
+ *    Two kinds of moment are then set aside as not-driving: the first seconds
+ *    after any hole in the sensor data (the app has just come back to the
+ *    foreground, and the phone is being held), and any moment the gyroscope
+ *    reports rotation about a horizontal axis — a car's body barely rolls or
+ *    pitches, so that only happens when the phone itself is picked up, tapped
+ *    or fiddled with. Both were seen on a real drive, as clusters of
+ *    convincing-looking "harsh events" the moment the app returned.
  * 3. The car's axes. With a gyroscope, yaw rate (rotation about "up") is
  *    exactly the signal that says a corner is happening: lateral force is
  *    speed × yaw rate, and speed is never negative, so the horizontal force
@@ -83,21 +95,28 @@ const MIN_RATED_S = 300;
 /** Events per ten minutes up to which a category is amber rather than red. */
 const AMBER_MAX_PER_10_MIN = 2;
 
-/** Time constant, seconds, smoothing horizontal force: about the shortest event worth counting. */
+/** Time constant, seconds, smoothing the raw reading: about the shortest event worth counting. */
 const SMOOTH_TC_S = 0.5;
-/** Gravity learning speed while the car is quiet, and while it's busy, seconds. */
-const GRAVITY_TC_QUIET_S = 2;
-const GRAVITY_TC_BUSY_S = 30;
-/** A reading this far off 1 g in magnitude is a jolt, not orientation information. */
-const JOLT_MAGNITUDE_G = 0.5;
-/** A reading this close to 1 g in magnitude can seed the gravity estimate. */
-const GRAVITY_SEED_MAGNITUDE_G = 0.1;
-/** Dynamic acceleration below this (g) counts as "quiet" for gravity learning. */
-const QUIET_DYNAMIC_G = 0.1;
+/** Gravity is re-estimated every GRAVITY_STEP_S, from a median over GRAVITY_HALF_WINDOW_S either side. */
+const GRAVITY_STEP_S = 30;
+const GRAVITY_HALF_WINDOW_S = 60;
+/** Fewest samples a gravity window may hold before it widens (a stretch with no sensor data). */
+const GRAVITY_MIN_SAMPLES = 50;
+/** A silence in the sensor stream longer than this (seconds) is a gap, not slow sampling. */
+const MAX_GAP_S = 1;
 
 /** The first and last moments of a drive are handling the phone, not driving. */
 const SETTLE_S = 5;
 const TAIL_S = 1.5;
+/** Likewise the seconds after the sensors come back from a hole (the app returning to the foreground). */
+const POST_GAP_SETTLE_S = 10;
+/**
+ * Rotation about a horizontal axis (rad/s, smoothed) above which the phone is being
+ * handled, not driven: real driving stays under ~0.1, picking it up reached 2.5.
+ */
+const HANDLING_RAD_S = 0.3;
+/** Seconds either side of a handled moment that are also set aside. */
+const HANDLING_MARGIN_S = 2;
 
 /** Horizontal samples are recorded at this interval, seconds — plenty for force smoothed over 0.5 s. */
 const RECORD_INTERVAL_S = 0.1;
@@ -145,6 +164,16 @@ export function lightForEvents(events: number, seconds: number): Light {
   return per10Min <= AMBER_MAX_PER_10_MIN ? 'amber' : 'red';
 }
 
+interface HorizontalSeries {
+  forces: Vec[];
+  yaws: number[];
+  /** Rotation about horizontal axes at each moment (rad/s); NaN without a gyroscope. */
+  tumbles: number[];
+  /** The drive's average "up" (unit vector, phone frame). */
+  up: Vec;
+  hasGyro: boolean;
+}
+
 interface Axes {
   /** Unit vector pointing forward, in the phone's frame. */
   forward: Vec;
@@ -153,31 +182,30 @@ interface Axes {
 }
 
 export class DriveBreakdown {
-  private gravity: Vec | null = null;
-  private gravitySum: Vec = [0, 0, 0];
-  private smoothed: Vec = [0, 0, 0];
-  private smoothedYaw = 0;
-  private hasGyro = false;
+  private smoothedAccel: Vec | null = null;
+  private smoothedGyro: Vec | null = null;
   private startT: number | null = null;
   private lastT = 0;
   private lastRecordS = -Infinity;
+  private activeSeconds = 0;
+  /** Seconds-since-start at which the sensors came back from a hole. */
+  private gapEnds: number[] = [];
 
-  /** Recorded, decimated: seconds since start, horizontal force xyz, yaw rate. */
+  /** Recorded, decimated: seconds since start, smoothed accelerometer xyz, smoothed gyro xyz (NaN if none). */
   private times: number[] = [];
-  private forces: Vec[] = [];
-  private yaws: number[] = [];
+  private accels: Vec[] = [];
+  private gyros: Vec[] = [];
 
   /** push feeds one sample. Samples with non-increasing t are ignored. */
   push(s: DriveSample): void {
     if (this.startT === null) this.startT = s.t;
     const a: Vec = [s.x, s.y, s.z];
-    const magnitudeOff = Math.abs(norm(a) - 1);
+    const w: Vec | null =
+      s.gx !== undefined && s.gy !== undefined && s.gz !== undefined ? [s.gx, s.gy, s.gz] : null;
 
-    if (this.gravity === null) {
-      // Wait for a sane reading to seed "up" — a phone being picked up and
-      // mounted starts a drive with jolts that say nothing about orientation.
-      if (magnitudeOff >= GRAVITY_SEED_MAGNITUDE_G) return;
-      this.gravity = [...a];
+    if (this.smoothedAccel === null) {
+      this.smoothedAccel = a;
+      this.smoothedGyro = w;
       this.lastT = s.t;
       return;
     }
@@ -185,30 +213,27 @@ export class DriveBreakdown {
     if (dt <= 0) return;
     this.lastT = s.t;
 
-    if (magnitudeOff < JOLT_MAGNITUDE_G) {
-      const quiet = norm(sub(a, this.gravity)) < QUIET_DYNAMIC_G;
-      const tc = quiet ? GRAVITY_TC_QUIET_S : GRAVITY_TC_BUSY_S;
-      this.gravity = add(this.gravity, scale(sub(a, this.gravity), dt / (tc + dt)));
-    }
-    const up = unit(this.gravity);
-    this.gravitySum = add(this.gravitySum, scale(up, dt));
-
-    const dynamic = sub(a, this.gravity);
-    const horizontal = sub(dynamic, scale(up, dot(dynamic, up)));
-    const k = dt / (SMOOTH_TC_S + dt);
-    this.smoothed = add(this.smoothed, scale(sub(horizontal, this.smoothed), k));
-
-    if (s.gx !== undefined && s.gy !== undefined && s.gz !== undefined) {
-      this.hasGyro = true;
-      this.smoothedYaw += k * (dot([s.gx, s.gy, s.gz], up) - this.smoothedYaw);
+    if (dt > MAX_GAP_S) {
+      // The sensors went quiet (the app was in the background, say) — start
+      // smoothing afresh rather than smearing one side of the gap into the other.
+      this.gapEnds.push((s.t - this.startT) / 1000);
+      this.smoothedAccel = a;
+      this.smoothedGyro = w;
+    } else {
+      this.activeSeconds += dt;
+      const k = dt / (SMOOTH_TC_S + dt);
+      this.smoothedAccel = add(this.smoothedAccel, scale(sub(a, this.smoothedAccel), k));
+      if (w !== null) {
+        this.smoothedGyro = this.smoothedGyro === null ? w : add(this.smoothedGyro, scale(sub(w, this.smoothedGyro), k));
+      }
     }
 
     const seconds = (s.t - this.startT) / 1000;
     if (seconds - this.lastRecordS >= RECORD_INTERVAL_S) {
       this.lastRecordS = seconds;
       this.times.push(seconds);
-      this.forces.push([...this.smoothed]);
-      this.yaws.push(this.hasGyro ? this.smoothedYaw : NaN);
+      this.accels.push([...this.smoothedAccel]);
+      this.gyros.push(this.smoothedGyro === null ? [NaN, NaN, NaN] : [...this.smoothedGyro]);
     }
   }
 
@@ -222,25 +247,37 @@ export class DriveBreakdown {
     const n = this.times.length;
     if (n === 0) return allGreen;
 
+    const series = this.horizontalSeries();
+
     const endS = this.times[n - 1]!;
+    const handled = this.handledTimes(series);
     const usable: number[] = [];
+    let h = 0;
     for (let i = 0; i < n; i++) {
-      if (this.times[i]! >= SETTLE_S && this.times[i]! <= endS - TAIL_S) usable.push(i);
+      const t = this.times[i]!;
+      if (t < SETTLE_S || t > endS - TAIL_S) continue;
+      if (this.gapEnds.some((g) => t >= g && t < g + POST_GAP_SETTLE_S)) continue;
+      while (h < handled.length && handled[h]! < t - HANDLING_MARGIN_S) h++;
+      if (h < handled.length && handled[h]! <= t + HANDLING_MARGIN_S) continue;
+      usable.push(i);
     }
 
     const lowestThreshold = Math.min(BRAKING_G, ACCELERATION_G, CORNERING_G);
-    if (!usable.some((i) => norm(this.forces[i]!) >= lowestThreshold)) return allGreen;
+    if (!usable.some((i) => norm(series.forces[i]!) >= lowestThreshold)) return allGreen;
 
-    const axes = this.gyroAxes(usable) ?? this.principalAxes(usable);
+    const axes = this.gyroAxes(usable, series) ?? this.principalAxes(usable, series);
     if (axes === null) {
       const unknown: CategoryResult = { light: 'unknown', events: 0 };
       return { braking: unknown, cornering: unknown, acceleration: unknown };
     }
 
-    const forward = usable.map((i) => dot(this.forces[i]!, axes.forward));
-    const sideways = usable.map((i) => dot(this.forces[i]!, axes.left));
+    const forward = usable.map((i) => dot(series.forces[i]!, axes.forward));
+    const sideways = usable.map((i) => dot(series.forces[i]!, axes.left));
     const times = usable.map((i) => this.times[i]!);
-    const seconds = endS;
+    // Rated on the time the sensors were actually delivering, not wall-clock:
+    // a drive with the app in the background for ten minutes wasn't ten
+    // minutes of clean driving.
+    const seconds = this.activeSeconds;
 
     const rate = (series: number[], threshold: number): CategoryResult => {
       const events = countEvents(series, times, threshold);
@@ -259,6 +296,77 @@ export class DriveBreakdown {
     };
   }
 
+  /** handledTimes lists (ascending) the moments the gyroscope says the phone itself was being moved. */
+  private handledTimes(series: HorizontalSeries): number[] {
+    const out: number[] = [];
+    series.tumbles.forEach((tumble, i) => {
+      if (tumble >= HANDLING_RAD_S) out.push(this.times[i]!);
+    });
+    return out;
+  }
+
+  /**
+   * horizontalSeries turns the recorded readings into what the rest needs:
+   * horizontal force (gravity and the vertical component removed) and yaw
+   * rate at each recorded moment, plus the drive's average "up".
+   */
+  private horizontalSeries(): HorizontalSeries {
+    const gravity = this.gravityAt();
+    const forces: Vec[] = [];
+    const yaws: number[] = [];
+    const tumbles: number[] = [];
+    let upSum: Vec = [0, 0, 0];
+    for (let i = 0; i < this.times.length; i++) {
+      const g = gravity(this.times[i]!);
+      const up = unit(g);
+      upSum = add(upSum, up);
+      const dynamic = sub(this.accels[i]!, g);
+      forces.push(sub(dynamic, scale(up, dot(dynamic, up))));
+      const yaw = dot(this.gyros[i]!, up);
+      yaws.push(yaw);
+      tumbles.push(norm(sub(this.gyros[i]!, scale(up, yaw))));
+    }
+    return { forces, yaws, tumbles, up: unit(upSum), hasGyro: yaws.some((y) => !Number.isNaN(y)) };
+  }
+
+  /**
+   * gravityAt returns a function giving the gravity vector (in the phone's
+   * frame) at any time: a median of the smoothed reading over a window either
+   * side, recomputed every GRAVITY_STEP_S and interpolated between. Median,
+   * per axis, because harsh braking is usually sharper than acceleration and a
+   * mean would be dragged toward whichever side is harsher.
+   */
+  private gravityAt(): (seconds: number) => Vec {
+    const first = this.times[0]!;
+    const last = this.times[this.times.length - 1]!;
+    const centres: number[] = [];
+    const vectors: Vec[] = [];
+    for (let c = first; c < last + GRAVITY_STEP_S; c += GRAVITY_STEP_S) {
+      let window = this.indicesWithin(c, GRAVITY_HALF_WINDOW_S);
+      if (window.length < GRAVITY_MIN_SAMPLES) window = this.indicesWithin(c, 5 * GRAVITY_HALF_WINDOW_S);
+      if (window.length < GRAVITY_MIN_SAMPLES) window = this.times.map((_, i) => i);
+      const axis = (k: number): number => median(window.map((i) => this.accels[i]![k]!));
+      centres.push(c);
+      vectors.push([axis(0), axis(1), axis(2)]);
+    }
+    return (seconds: number): Vec => {
+      let j = 0;
+      while (j + 1 < centres.length - 1 && centres[j + 1]! <= seconds) j++;
+      const k = centres.length === 1 ? 0 : Math.min(1, Math.max(0, (seconds - centres[j]!) / (centres[j + 1]! - centres[j]!)));
+      const a = vectors[j]!;
+      const b = vectors[Math.min(j + 1, vectors.length - 1)]!;
+      return add(scale(a, 1 - k), scale(b, k));
+    };
+  }
+
+  private indicesWithin(centre: number, halfWindow: number): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < this.times.length; i++) {
+      if (Math.abs(this.times[i]! - centre) <= halfWindow) out.push(i);
+    }
+    return out;
+  }
+
   /**
    * gyroAxes finds the car's axes from yaw rate: the horizontal force that
    * rises and falls with yaw is the sideways axis (lateral force = speed ×
@@ -266,16 +374,16 @@ export class DriveBreakdown {
    * turn), and forward follows from the right-hand rule. Null when there is
    * no gyroscope, or too little cornering to learn from.
    */
-  private gyroAxes(usable: number[]): Axes | null {
-    if (!this.hasGyro) return null;
-    const up = unit(this.gravitySum);
+  private gyroAxes(usable: number[], series: HorizontalSeries): Axes | null {
+    if (!series.hasGyro) return null;
+    const { forces, yaws, up } = series;
 
     let c: Vec = [0, 0, 0];
     let turning = 0;
     for (const i of usable) {
-      const yaw = this.yaws[i]!;
+      const yaw = yaws[i]!;
       if (Math.abs(yaw) < TURNING_YAW_RAD_S) continue;
-      c = add(c, scale(this.forces[i]!, yaw));
+      c = add(c, scale(forces[i]!, yaw));
       turning++;
     }
     if (turning < MIN_TURNING_SAMPLES) return null;
@@ -286,9 +394,9 @@ export class DriveBreakdown {
     let yawPower = 0;
     let sidePower = 0;
     for (const i of usable) {
-      const yaw = this.yaws[i]!;
+      const yaw = yaws[i]!;
       if (Math.abs(yaw) < TURNING_YAW_RAD_S) continue;
-      const side = dot(this.forces[i]!, left);
+      const side = dot(forces[i]!, left);
       cov += yaw * side;
       yawPower += yaw * yaw;
       sidePower += side * side;
@@ -306,8 +414,8 @@ export class DriveBreakdown {
    * carry comparable energy (they can't be told apart) or the harsher side
    * isn't clearly harsher.
    */
-  private principalAxes(usable: number[]): Axes | null {
-    const samples = usable.map((i) => this.forces[i]!).filter((f) => norm(f) >= PCA_MIN_G);
+  private principalAxes(usable: number[], series: HorizontalSeries): Axes | null {
+    const samples = usable.map((i) => series.forces[i]!).filter((f) => norm(f) >= PCA_MIN_G);
     if (samples.length < MIN_TURNING_SAMPLES) return null;
 
     const cov: number[][] = [
@@ -337,6 +445,11 @@ export class DriveBreakdown {
     if (negative >= positive * SIDE_ASYMMETRY) return { forward: along, left: second.vector };
     return null;
   }
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((x, y) => x - y);
+  return sorted[Math.floor(sorted.length / 2)]!;
 }
 
 /** countEvents counts stretches of `series` at or above `threshold` lasting at least MIN_EVENT_S. */

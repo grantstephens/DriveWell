@@ -94,6 +94,20 @@ except `App.tsx`.
   path has not yet been validated against a real drive** (the debug export logs gyro
   now, precisely so it can be) — check the braking-vs-acceleration sign convention
   against real captures before trusting it.
+- **Holes in the sensor stream are not driving.** Android stops delivering accelerometer
+  and gyroscope events to an app that is not in the foreground (Android 9+), so a driver
+  who switches to a navigation app leaves DriveWell blind — a real 17-minute drive had
+  ~9 minutes of holes (145 s, 193 s, 213 s). `SmoothnessEngine` treats any `MAX_SAMPLE_GAP_S`
+  silence as a hole: wall-clock `seconds` advances, but nothing is scored across it and the
+  filter re-seeds (before this, that 17-minute drive reported 826 s of "live" time from ~464 s
+  of data). `DriveBreakdown` likewise rates on active time, and additionally ignores
+  `POST_GAP_SETTLE_S` after a hole and any moment the gyroscope shows the phone tumbling
+  about a horizontal axis (`HANDLING_RAD_S`) — a car body barely rolls or pitches, so that
+  is the phone being picked up. Its gravity comes from a rolling median over the whole
+  drive, not an online estimate: an online low-pass took a minute to converge after the
+  phone was mounted, and its tilt error read as ~0.16 g of phantom acceleration. Real
+  gyro logs also show the gyroscope delivering ~12.5 Hz, not the 50 Hz requested; fine for
+  yaw smoothed over 0.5 s.
 - **The breakdown is not persisted.** It is only needed for the drive that just ended
   (the share card), so `Trip` and the schema are untouched. Sharing goes through React
   Native's built-in `Share` (plain text), so there is no new native dependency.

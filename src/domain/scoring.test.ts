@@ -374,3 +374,31 @@ test('a fresh engine has scored nothing and proven nothing', () => {
   expect(e.seconds).toBe(0);
   expect(e.live).toBe(false);
 });
+
+// Found on a real drive: the app spent ~9 of 17 minutes in the background
+// (Android stops delivering sensor events to a background app), leaving
+// holes of 145 s, 193 s and 213 s between single samples. The first sample
+// after a hole has a huge Δt, and the engine credited the whole hole as live
+// driving at that one sample's smoothness — a 1015 s "trip" with 826 s of
+// "live" time out of ~460 s of real data.
+test('a hole in the sensor stream is not scored as if it were driving', () => {
+  const e = new SmoothnessEngine();
+  feed(e, 0, 20 * HZ + 1, driving({ x: 0, y: 0, z: 1 }));
+  const liveBefore = e.liveSeconds;
+  const scoreBefore = e.score;
+
+  // 300 s of nothing, then driving resumes.
+  feed(e, 20_000 + 300_000, 20 * HZ + 1, driving({ x: 0, y: 0, z: 1 }));
+
+  expect(e.seconds).toBeCloseTo(340, 0); // the wall-clock trip really was that long…
+  expect(e.liveSeconds).toBeLessThan(liveBefore + 25); // …but only the ~20 s either side is scored
+  expect(e.score).toBeGreaterThanOrEqual(scoreBefore - 1);
+});
+
+test('the first sample after a hole does not register as a jolt', () => {
+  const e = new SmoothnessEngine();
+  feed(e, 0, 20 * HZ + 1, driving({ x: 0, y: 0, z: 1 }));
+  // Phone is in a different attitude when the app comes back to the foreground.
+  feed(e, 400_000, 20 * HZ + 1, driving({ x: 0.6, y: 0, z: 0.8 }));
+  expect(e.smoothness).toBeGreaterThanOrEqual(90);
+});

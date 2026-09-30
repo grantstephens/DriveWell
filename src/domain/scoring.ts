@@ -348,6 +348,16 @@ const SCORING_SETTLE_S = 15;
 const GRAVITY_G = 1;
 
 /**
+ * A silence in the sensor stream longer than this (seconds) is a hole, not
+ * slow sampling — in practice the app being in the background, which Android
+ * answers by delivering no accelerometer events at all. The trip's wall-clock
+ * time still advances across it (the drive really did take that long), but
+ * nothing is scored across it, and the low-pass filter is re-seeded rather
+ * than differenced against a reading from minutes ago.
+ */
+const MAX_SAMPLE_GAP_S = 1;
+
+/**
  * SmoothnessEngine turns a live stream of accelerometer samples into the
  * numbers the Drive screen shows. Create one per trip; push every sample as
  * it arrives; read the getters whenever the UI wants to repaint.
@@ -395,6 +405,12 @@ export class SmoothnessEngine {
     }
     const dt = (s.t - this.lastT) / 1000;
     if (dt <= 0) return;
+    if (dt > MAX_SAMPLE_GAP_S) {
+      this.filteredMag = mag;
+      this.lastT = s.t;
+      this.secondsAcc += dt;
+      return;
+    }
 
     const prevFiltered = this.filteredMag;
     const filterAlpha = dt / (SIGNAL_TC_S + dt);
