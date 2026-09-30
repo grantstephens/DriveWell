@@ -1,0 +1,32 @@
+A shareable end-of-drive card, and three bugs its first real drives exposed.
+
+New: when a drive ends you now get a traffic light — green, amber or red — for
+each of braking, cornering and acceleration, plus a Share button that hands a
+short Wordle-style text card to your share sheet (trip number, score, three
+coloured circles; no time or place). Telling those three apart needs to know
+which way is forward, which a phone can't know from how it's mounted, so this
+build also reads the gyroscope (where the phone has one — still no
+permission, still fully offline) and works out the car's own axes from the
+drive itself. A phone without a gyroscope falls back to a weaker one-sensor
+estimate and shows a grey circle rather than guess when it can't tell.
+
+Fixed, from the first drives recorded with gyroscope data:
+- The phone being tilted into its mount at the start could read as a minute
+  of phantom acceleration, inflating the acceleration light and hiding
+  braking. Gravity is now estimated from the whole drive.
+- Picking the phone up mid-drive (for instance when returning to the app) was
+  being counted as a burst of harsh braking and cornering. The gyroscope now
+  spots the phone being handled and those moments are ignored.
+- Stretches where no sensor data arrived were being counted as driving time:
+  one 17-minute drive reported 826 seconds of live driving from about 464
+  seconds of data. They are no longer scored.
+
+Known issue: Android stops giving sensor data to an app that isn't in front,
+so if you switch to a navigation app mid-drive DriveWell goes blind until you
+come back. The score covers only the time it could see. Keep DriveWell on
+screen for the full picture; a proper fix is being considered.
+
+Still a beta: braking-versus-acceleration relies on the gyroscope and has been
+checked against synthetic drives and two real ones, not yet a controlled test.
+If a light looks wrong, "Export last drive" is the fastest way to get it looked
+at.
