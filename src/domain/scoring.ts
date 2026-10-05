@@ -68,9 +68,9 @@
  * leave that motorway reading alone is too loose to add anything on a rough
  * road, and any ceiling tight enough to help there flags ordinary highway
  * driving as permanently rough — reintroducing the exact bug the ratio
- * exists to fix. This is the ISO 2631 approach and DriveWell's diverging on
+ * exists to fix. This is the ISO 2631 approach and Featherfoot's diverging on
  * purpose: ISO 2631 measures absolute ride *exposure* (a rough road is
- * genuinely less comfortable, full stop), where DriveWell measures
+ * genuinely less comfortable, full stop), where Featherfoot measures
  * road-relative driving *behavior* (how are *you* driving, on whatever road
  * this is) — those are different questions, and only the second one needs
  * self-scaling. The accepted, documented cost: on a road that's already
@@ -122,7 +122,7 @@
  * known-weak signal compared to what production telematics systems use —
  * Google's own research on phone-based hard-braking detection measured a
  * bare accelerometer heuristic at ~167x worse (by PR-AUC) than a model
- * fused with GPS speed and connected-vehicle sensors. DriveWell deliberately
+ * fused with GPS speed and connected-vehicle sensors. Featherfoot deliberately
  * has neither GPS nor a network connection nor a server-side model, by
  * design (see AGENTS.md's "deliberate simplifications") — this engine is
  * not trying to match that ceiling, only to be honest and useful within the
@@ -145,7 +145,7 @@ export interface AccelSample {
 /**
  * SlidingRms maintains the root-mean-square of a value over a trailing
  * time window, weighted by each sample's own Δt so it stays correct under
- * DriveWell's real, uneven accelerometer sample rate rather than assuming a
+ * Featherfoot's real, uneven accelerometer sample rate rather than assuming a
  * fixed Hz. A ring buffer, not an EMA approximation of one — see the module
  * doc for why that distinction is the whole point: it is well-behaved from
  * the very first sample (the RMS of however much data exists so far), with

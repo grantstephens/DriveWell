@@ -23,7 +23,7 @@ const CIRCLE: Record<Light, string> = {
 export function formatShareText(input: { tripNumber: number; score: number; breakdown: Breakdown }): string {
   const { tripNumber, score, breakdown } = input;
   return [
-    `🍃 DriveWell #${tripNumber} · ${Math.round(score)}%`,
+    `🍃 Featherfoot #${tripNumber} · ${Math.round(score)}%`,
     `${CIRCLE[breakdown.braking.light]} Braking`,
     `${CIRCLE[breakdown.cornering.light]} Cornering`,
     `${CIRCLE[breakdown.acceleration.light]} Acceleration`,

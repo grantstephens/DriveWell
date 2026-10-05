@@ -36,13 +36,13 @@ export function SettingsScreen() {
         <Card.Content style={styles.cardContent}>
           <Text variant="titleMedium">How scoring works</Text>
           <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-            DriveWell watches your phone's motion sensors while you drive. Sudden braking,
+            Featherfoot watches your phone's motion sensors while you drive. Sudden braking,
             hard acceleration, and sharp cornering turn the leaf amber and then red, and
             it wilts; a steady, gentle touch keeps it green — and pushes your live score
             toward 100%. When a drive
             ends you get a traffic light for each of braking, cornering and acceleration,
             ready to share. Android only gives sensor data to the app on screen, so
-            DriveWell pauses while you're in another app and resumes when you return —
+            Featherfoot pauses while you're in another app and resumes when you return —
             time it couldn't see isn't scored. Smooth driving is efficient driving.
           </Text>
         </Card.Content>
@@ -52,7 +52,7 @@ export function SettingsScreen() {
         <Card.Content style={styles.cardContent}>
           <Text variant="titleMedium">Your data</Text>
           <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-            Every trip is stored only on this device. DriveWell makes no network requests
+            Every trip is stored only on this device. Featherfoot makes no network requests
             and shares nothing.
           </Text>
         </Card.Content>

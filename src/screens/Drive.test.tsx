@@ -287,7 +287,7 @@ test('the summary can be shared as a Wordle-style card through the OS share shee
 
   expect(share).toHaveBeenCalledTimes(1);
   const message = share.mock.calls[0]![0].message as string;
-  expect(message).toContain('DriveWell #1');
+  expect(message).toContain('Featherfoot #1');
   expect(message).toContain('🟢 Braking');
   expect(message).toContain('🟢 Cornering');
   expect(message).toContain('🟢 Acceleration');
@@ -306,7 +306,7 @@ test('the trip number counts up through the driving history', async () => {
 
   await fireEvent.press(screen.getByTestId('drive-share'));
 
-  expect((share.mock.calls[0]![0].message as string)).toContain('DriveWell #2');
+  expect((share.mock.calls[0]![0].message as string)).toContain('Featherfoot #2');
   share.mockRestore();
 });
 
@@ -355,7 +355,7 @@ function smooth(motion: ReturnType<typeof fakeMotion>, fromMs: number, seconds: 
   }
 }
 
-describe('pausing while DriveWell is not on screen', () => {
+describe('pausing while Featherfoot is not on screen', () => {
   afterEach(() => jest.restoreAllMocks());
 
   test('leaving the screen outside a drive changes nothing', async () => {
@@ -427,7 +427,7 @@ describe('pausing while DriveWell is not on screen', () => {
     expect(trips[0]!.seconds).toBeLessThan(30);
   });
 
-  test('the post-drive summary says how long DriveWell was off screen', async () => {
+  test('the post-drive summary says how long Featherfoot was off screen', async () => {
     let now = 1_000_000;
     jest.spyOn(Date, 'now').mockImplementation(() => now);
     const app = fakeAppState();

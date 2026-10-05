@@ -22,7 +22,7 @@ import { startMotion, type MotionSample, type MotionSubscription } from '../plat
 import type { Theme } from '../theme';
 
 /** The tag expo-keep-awake groups this screen's lock under. */
-const KEEP_AWAKE_TAG = 'drivewell-drive';
+const KEEP_AWAKE_TAG = 'featherfoot-drive';
 
 /**
  * How often the leaf actually repaints, milliseconds — deliberately far
@@ -373,7 +373,7 @@ export function DriveScreen() {
                   testID="drive-off-screen"
                   style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center' }}
                 >
-                  {`DriveWell wasn't on screen for ${formatClock(summary.offScreenSeconds)}, so that stretch isn't scored.`}
+                  {`Featherfoot wasn't on screen for ${formatClock(summary.offScreenSeconds)}, so that stretch isn't scored.`}
                 </Text>
               )}
               <Button mode="outlined" icon="share-variant" onPress={() => void share()} testID="drive-share">

@@ -1,10 +1,10 @@
-# DriveWell — React Native (Expo).
+# Featherfoot — React Native (Expo).
 
 .DEFAULT_GOAL := help
 .PHONY: help check test typecheck start android prepare-release
 
 help: ## Show this help
-	@echo 'DriveWell — targets:'
+	@echo 'Featherfoot — targets:'
 	@grep -hE '^[a-zA-Z-]+:.*?## ' $(MAKEFILE_LIST) \
 		| awk -F':.*?## ' '{printf "  \033[1m%-16s\033[0m %s\n", $$1, $$2}'
 

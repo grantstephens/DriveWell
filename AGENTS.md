@@ -1,4 +1,4 @@
-# DriveWell — Agent guidance
+# Featherfoot — Agent guidance
 
 This file provides guidance to coding agents (Claude Code, pi, etc.) when working in
 this repository.
@@ -17,7 +17,20 @@ layout conventions) was adapted from the sibling project ReminDiary, which has a
 been through real F-Droid submission review — see that repository's own `AGENTS.md` and
 `fdroid/` recipe for the reasoning behind mechanics like the reproducible-build gradle
 patches, the per-ABI split, and `fdroid-version.txt`. Nothing here should silently
-diverge from those proven mechanics without a reason specific to DriveWell.
+diverge from those proven mechanics without a reason specific to Featherfoot.
+
+## Naming
+
+The app is **Featherfoot** (an old driving idiom for a gentle foot on the pedals — the
+opposite of a lead foot); it was called DriveWell until beta.13. The rename moved the
+Android package id (`xyz.hub13.featherfoot`), the database (`featherfoot.db`), the release
+artefact names, the F-Droid recipe and every user-facing string. Deliberately **not**
+renamed, because they are infrastructure that exists under the old name: the GitHub
+repository URL (rename the repo, then update `SHARE_URL` in `src/domain/share.ts`, the
+README links and the F-Droid recipe), the signing keystore file and the
+`ANDROID_KEY_ALIAS` secret (`drivewell`), the old per-release changelogs, and
+`docs/superpowers/`. A new package id is a different app to Android: installs from before
+the rename are separate and their trips don't carry over.
 
 ## Expo version
 
@@ -97,7 +110,7 @@ except `App.tsx`.
   against real captures before trusting it.
 - **Holes in the sensor stream are not driving, and the Drive screen pauses on purpose.**
   Android stops delivering accelerometer and gyroscope events to an app that is not in the
-  foreground (Android 9+), so a driver who switches to a navigation app leaves DriveWell
+  foreground (Android 9+), so a driver who switches to a navigation app leaves Featherfoot
   blind — a real 17-minute drive had ~9 minutes of holes (145 s, 193 s, 213 s). Rather
   than let that happen silently, `DriveScreen` listens to `AppState` while a drive runs:
   leaving the screen detaches the sensors and shows "Paused", returning re-attaches them to
@@ -261,7 +274,7 @@ TDD throughout: failing test first, watch it fail, then implement.
 
 ## Data
 
-The database is `drivewell.db`, `SqliteStore` via `expo-sqlite`. Uninstalling the app
+The database is `featherfoot.db`, `SqliteStore` via `expo-sqlite`. Uninstalling the app
 deletes it — stated plainly in the README, not a gap to silently fix later.
 
 ## Assets
@@ -303,7 +316,7 @@ versionCodes. Both files must exist *in the tagged commit*: F-Droid's `AutoUpdat
 reads Fastlane metadata from the exact commit a release tag points at, not from `main`
 afterward. Then tag and push as the command's output instructs.
 
-`fdroid/xyz.hub13.drivewell.yml` has no live `Builds:` entries yet — there has been no
+`fdroid/xyz.hub13.featherfoot.yml` has no live `Builds:` entries yet — there has been no
 release to point them at. It carries a commented, `TODO`-marked template adapted from
 ReminDiary's proven recipe; fill it in once v1.0.0 is tagged and its split APKs are
 published, following the comments in that file.

@@ -45,7 +45,7 @@ export class Capture {
 
   /** exportAndShare writes the buffered rows to a JSON file and opens the OS share sheet. */
   async exportAndShare(): Promise<void> {
-    const file = new File(Paths.document, `drivewell-debug-${Date.now()}.json`);
+    const file = new File(Paths.document, `featherfoot-debug-${Date.now()}.json`);
     file.create();
     file.write(JSON.stringify(this.rows));
     if (await Sharing.isAvailableAsync()) {

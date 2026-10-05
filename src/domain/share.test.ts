@@ -10,7 +10,7 @@ const breakdown = (braking: string, cornering: string, acceleration: string): Br
 
 test('formats a Wordle-style card: trip number, score, then one traffic light per skill', () => {
   expect(formatShareText({ tripNumber: 12, score: 91.4, breakdown: breakdown('green', 'amber', 'red') })).toBe(
-    ['🍃 DriveWell #12 · 91%', '🟢 Braking', '🟡 Cornering', '🔴 Acceleration', '', SHARE_URL].join('\n'),
+    ['🍃 Featherfoot #12 · 91%', '🟢 Braking', '🟡 Cornering', '🔴 Acceleration', '', SHARE_URL].join('\n'),
   );
 });
 

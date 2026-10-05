@@ -1,4 +1,6 @@
-# DriveWell
+# Featherfoot
+
+*Formerly called DriveWell.*
 
 Drive with this app open and it scores how smooth you are, using nothing but your
 phone's motion sensors (the accelerometer, plus the gyroscope if it has one). A leaf on screen shades from red through amber to
@@ -9,11 +11,11 @@ It never flashes, and it holds still if your phone's reduce-motion setting is on
 driving is efficient driving — this is a nudge toward more of it.
 
 Everything happens on the device. No account, no sync, no GPS, no network requests at
-all — DriveWell has nothing to send and nowhere to send it.
+all — Featherfoot has nothing to send and nowhere to send it.
 
 [![Licence: GPL v3](https://img.shields.io/badge/Licence-GPLv3-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/grantstephens/DriveWell?include_prereleases)](https://github.com/grantstephens/DriveWell/releases)
-[![F-Droid](https://img.shields.io/f-droid/v/xyz.hub13.drivewell)](https://f-droid.org/packages/xyz.hub13.drivewell/)
+[![F-Droid](https://img.shields.io/f-droid/v/xyz.hub13.featherfoot)](https://f-droid.org/packages/xyz.hub13.featherfoot/)
 
 Built with [React Native](https://reactnative.dev) (Expo), targeting Android.
 
@@ -21,10 +23,10 @@ Built with [React Native](https://reactnative.dev) (Expo), targeting Android.
 
 ### On F-Droid
 
-[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="80">](https://f-droid.org/packages/xyz.hub13.drivewell/)
+[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="80">](https://f-droid.org/packages/xyz.hub13.featherfoot/)
 
 (Pending the app's first tagged release and submission to fdroiddata — see
-`fdroid/xyz.hub13.drivewell.yml`.)
+`fdroid/xyz.hub13.featherfoot.yml`.)
 
 ### With Obtainium (recommended)
 
@@ -43,7 +45,7 @@ and open it. Android will warn you about installing from an unknown source, beca
 app is signed with the project's own key rather than distributed through Play.
 
 > **On permissions:** the only Android permission any release declares is `INTERNET`,
-> which nothing in the app ever uses (DriveWell makes zero network requests) — it exists
+> which nothing in the app ever uses (Featherfoot makes zero network requests) — it exists
 > only because the React Native template bakes it in. Everything sensor-related
 > (`ACTIVITY_RECOGNITION` and friends, pulled in transitively by `expo-sensors`) is
 > explicitly blocked. Check any release for yourself with `aapt dump permissions <apk>`.
@@ -57,7 +59,7 @@ Three screens:
   smoothness live. Tap **End Drive** when you arrive to save the trip, see its score and a
   braking/cornering/acceleration traffic light, and share it. Android only gives sensor
   data to the app that's on screen, so if you switch to another app (navigation, say)
-  DriveWell **pauses by itself** and picks up again when you come back; the time it
+  Featherfoot **pauses by itself** and picks up again when you come back; the time it
   couldn't see isn't scored, and the summary tells you how much there was.
 - **Stats** — your lifetime average, best drive, total time behind the wheel, and a
   "your last 5 drives vs. the 5 before" trend so you can see whether you're actually
@@ -67,7 +69,7 @@ Three screens:
 
 ### How the score works
 
-DriveWell reads the accelerometer's total magnitude — orientation-independent, so it
+Featherfoot reads the accelerometer's total magnitude — orientation-independent, so it
 doesn't matter where in the car the phone is mounted. Two things move that magnitude
 away from a resting 1 g: **jerk** (how fast acceleration is changing — hard braking,
 throttle stabs, swerves, potholes) and **sustained** acceleration (steady-state, like a
@@ -91,7 +93,7 @@ When you end a drive you also get a traffic light — green, amber or red — fo
 Wordle-style text card to your phone's share sheet:
 
 ```
-🍃 DriveWell #12 · 91%
+🍃 Featherfoot #12 · 91%
 🟢 Braking
 🟡 Cornering
 🔴 Acceleration
@@ -165,7 +167,7 @@ git tag v1.0.1
 git push origin main v1.0.1
 ```
 
-`fdroid/xyz.hub13.drivewell.yml` is a template for fdroiddata's submission, with the
+`fdroid/xyz.hub13.featherfoot.yml` is a template for fdroiddata's submission, with the
 `Builds:` entries commented out and marked `TODO` until v1.0.0 is tagged and published —
 see the comments in that file for exactly what to fill in.
 

@@ -1,5 +1,5 @@
-# Recipe for DriveWell, to be submitted to fdroiddata as
-# metadata/xyz.hub13.drivewell.yml once v1.0.0 is tagged and published.
+# Recipe for Featherfoot, to be submitted to fdroiddata as
+# metadata/xyz.hub13.featherfoot.yml once v1.0.0 is tagged and published.
 # Until then there is no release to build, so Builds: below is a commented
 # template adapted from the proven ReminDiary recipe (where every claim in
 # these comments was CI-verified, not guessed); the TODO markers cover the
@@ -16,7 +16,7 @@ SourceCode: https://github.com/grantstephens/DriveWell
 IssueTracker: https://github.com/grantstephens/DriveWell/issues
 Changelog: https://github.com/grantstephens/DriveWell/releases
 
-AutoName: DriveWell
+AutoName: Featherfoot
 
 # No inline Description: fdroidserver pulls the text from
 # fastlane/metadata/android/en-US/ in this repo at build/update time; the
@@ -70,7 +70,7 @@ Repo: https://github.com/grantstephens/DriveWell.git
 #     # TODO: full commit SHA of the v1.0.0 tag
 #     commit: 0000000000000000000000000000000000000000
 #     # TODO: real asset URL once release.yml has published the split APK
-#     binary: https://github.com/grantstephens/DriveWell/releases/download/v%v/drivewell-v%v-armeabi-v7a.apk
+#     binary: https://github.com/grantstephens/DriveWell/releases/download/v%v/featherfoot-v%v-armeabi-v7a.apk
 #     srclibs:
 #       - reproducible-apk-tools@v0.3.0
 #     # Debian forky nodejs matches the buildserver's Node (24.19.0), the
@@ -119,7 +119,7 @@ Repo: https://github.com/grantstephens/DriveWell.git
 #     # TODO: full commit SHA of the v1.0.0 tag (same as the armeabi-v7a entry)
 #     commit: 0000000000000000000000000000000000000000
 #     # TODO: real asset URL once release.yml has published the split APK
-#     binary: https://github.com/grantstephens/DriveWell/releases/download/v%v/drivewell-v%v-arm64-v8a.apk
+#     binary: https://github.com/grantstephens/DriveWell/releases/download/v%v/featherfoot-v%v-arm64-v8a.apk
 #     srclibs:
 #       - reproducible-apk-tools@v0.3.0
 #     sudo:

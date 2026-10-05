@@ -59,11 +59,11 @@ jobs:
     # last already pinned via node_modules' own version catalog regardless
     # of environment) still left native libs, AndroidManifest.xml, and
     # resources.arsc differing. F-Droid's buildserver checks out to
-    # /home/vagrant/build/xyz.hub13.drivewell; this matches that path
+    # /home/vagrant/build/xyz.hub13.featherfoot; this matches that path
     # exactly so a from-source build here is byte-identical to F-Droid's.
     defaults:
       run:
-        working-directory: /home/vagrant/build/xyz.hub13.drivewell
+        working-directory: /home/vagrant/build/xyz.hub13.featherfoot
     steps:
       # A direct git clone into the target path, not actions/checkout (to
       # the default location) followed by cp -a: cp preserves this runner's
@@ -84,8 +84,8 @@ jobs:
           sudo mkdir -p /home/vagrant/build
           sudo chown -R "$(id -un):$(id -gn)" /home/vagrant
           git clone --quiet "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" \
-            /home/vagrant/build/xyz.hub13.drivewell
-          cd /home/vagrant/build/xyz.hub13.drivewell
+            /home/vagrant/build/xyz.hub13.featherfoot
+          cd /home/vagrant/build/xyz.hub13.featherfoot
           git checkout --quiet "${{ github.event.inputs.tag || github.ref_name }}"
 
       # Matches F-Droid's buildserver exactly (Node from Debian forky via
@@ -211,7 +211,7 @@ jobs:
           RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        working-directory: /home/vagrant/build/xyz.hub13.drivewell/android
+        working-directory: /home/vagrant/build/xyz.hub13.featherfoot/android
         run: ./gradlew bundleRelease
 
       # Obtainium installs APKs, not bundles; bundletool flattens the AAB
@@ -235,9 +235,9 @@ jobs:
             --ks-key-alias="$KEY_ALIAS" \
             --key-pass="pass:$KEY_PASS"
           unzip -p "$RUNNER_TEMP/app.apks" universal.apk \
-            > "drivewell-${{ steps.version.outputs.tag }}.apk"
+            > "featherfoot-${{ steps.version.outputs.tag }}.apk"
           cp android/app/build/outputs/bundle/release/app-release.aab \
-            "drivewell-${{ steps.version.outputs.tag }}.aab"
+            "featherfoot-${{ steps.version.outputs.tag }}.aab"
 
       # Assertions, not just output: a silent regression here ships a
       # broken, over-permissioned, or wrongly-signed build to everyone
@@ -248,10 +248,10 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           tools/verify-release-apk.sh \
-            "drivewell-${{ steps.version.outputs.tag }}.apk" \
+            "featherfoot-${{ steps.version.outputs.tag }}.apk" \
             "${{ steps.version.outputs.code }}"
 
-      # F-Droid's own build (see fdroid/xyz.hub13.drivewell.yml) splits by
+      # F-Droid's own build (see fdroid/xyz.hub13.featherfoot.yml) splits by
       # ABI rather than shipping one universal APK, to cut the real per-
       # device download roughly in half. Its reproducible-build check
       # ("Binaries:"/per-build "binary:") verifies its from-source build is
@@ -281,7 +281,7 @@ jobs:
           TAG=${{ steps.version.outputs.tag }}
 
           # Same tool, same tag, F-Droid's own recipe srclibs for its side of
-          # this comparison (see fdroid/xyz.hub13.drivewell.yml's postbuild:)
+          # this comparison (see fdroid/xyz.hub13.featherfoot.yml's postbuild:)
           # - apksigcopier's signature-transplant check requires both APKs'
           # local-entry regions to land at the same byte length, which only
           # holds if both sides apply the identical zipalign normalization.
@@ -357,7 +357,7 @@ jobs:
             "$RAT_DIR/zipalign.py" --page-size 16 --pad-like-apksigner --replace \
               "$UNSIGNED.unaligned" "$UNSIGNED"
 
-            OUT="drivewell-${TAG}-${ABI}.apk"
+            OUT="featherfoot-${TAG}-${ABI}.apk"
             apksigner sign --ks "$RUNNER_TEMP/keystore.jks" --ks-pass "pass:$KS_PASS" \
               --ks-key-alias "$KEY_ALIAS" --key-pass "pass:$KEY_PASS" \
               --out "$OUT" "$UNSIGNED"
@@ -376,9 +376,9 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           files: |
-            /home/vagrant/build/xyz.hub13.drivewell/drivewell-${{ steps.version.outputs.tag }}.apk
-            /home/vagrant/build/xyz.hub13.drivewell/drivewell-${{ steps.version.outputs.tag }}.aab
-            /home/vagrant/build/xyz.hub13.drivewell/drivewell-${{ steps.version.outputs.tag }}-armeabi-v7a.apk
-            /home/vagrant/build/xyz.hub13.drivewell/drivewell-${{ steps.version.outputs.tag }}-arm64-v8a.apk
+            /home/vagrant/build/xyz.hub13.featherfoot/featherfoot-${{ steps.version.outputs.tag }}.apk
+            /home/vagrant/build/xyz.hub13.featherfoot/featherfoot-${{ steps.version.outputs.tag }}.aab
+            /home/vagrant/build/xyz.hub13.featherfoot/featherfoot-${{ steps.version.outputs.tag }}-armeabi-v7a.apk
+            /home/vagrant/build/xyz.hub13.featherfoot/featherfoot-${{ steps.version.outputs.tag }}-arm64-v8a.apk
           generate_release_notes: true
           prerelease: ${{ contains(steps.version.outputs.tag, '-') }}

@@ -3,7 +3,7 @@ import { openExpoSqlite } from './expoSqlite';
 import { SqliteStore } from './SqliteStore';
 
 /** The database name. Uninstalling the app deletes it. */
-const DATABASE = 'drivewell.db';
+const DATABASE = 'featherfoot.db';
 
 /**
  * openStore opens the app's Store: SQLite on Android via expo-sqlite.

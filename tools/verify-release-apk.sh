@@ -32,7 +32,7 @@ echo "targetSdkVersion=$TARGET"
 # unusable by any other app, invisible in Play Store's permission listing.
 #
 # INTERNET is the one permission this app is allowed to declare - kept
-# deliberately: DriveWell itself makes zero network requests, but the React
+# deliberately: Featherfoot itself makes zero network requests, but the React
 # Native/Expo toolchain declares INTERNET unconditionally and removing it
 # from the manifest isn't worth fighting prebuild for. Checked by name, not
 # just count, so a future dependency swapping in some other permission while
