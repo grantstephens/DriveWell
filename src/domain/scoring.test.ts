@@ -390,8 +390,12 @@ test('a hole in the sensor stream is not scored as if it were driving', () => {
   // 300 s of nothing, then driving resumes.
   feed(e, 20_000 + 300_000, 20 * HZ + 1, driving({ x: 0, y: 0, z: 1 }));
 
-  expect(e.seconds).toBeCloseTo(340, 0); // the wall-clock trip really was that long…
-  expect(e.liveSeconds).toBeLessThan(liveBefore + 25); // …but only the ~20 s either side is scored
+  // The hole is neither scored nor counted as trip time: `seconds` is the
+  // time the sensors were actually delivering (the app paused itself, or
+  // Android paused it, while it wasn't on screen), so a driver who spends ten
+  // minutes in a navigation app doesn't get ten minutes of unseen "driving".
+  expect(e.seconds).toBeCloseTo(40, 0);
+  expect(e.liveSeconds).toBeLessThan(liveBefore + 25);
   expect(e.score).toBeGreaterThanOrEqual(scoreBefore - 1);
 });
 

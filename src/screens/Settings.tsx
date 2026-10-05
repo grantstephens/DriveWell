@@ -37,10 +37,13 @@ export function SettingsScreen() {
           <Text variant="titleMedium">How scoring works</Text>
           <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
             DriveWell watches your phone's motion sensors while you drive. Sudden braking,
-            hard acceleration, and sharp cornering turn the leaf brown; a steady, gentle
-            touch turns it green — and pushes your live score toward 100%. When a drive
+            hard acceleration, and sharp cornering turn the leaf amber and then red, and
+            it wilts; a steady, gentle touch keeps it green — and pushes your live score
+            toward 100%. When a drive
             ends you get a traffic light for each of braking, cornering and acceleration,
-            ready to share. Smooth driving is efficient driving.
+            ready to share. Android only gives sensor data to the app on screen, so
+            DriveWell pauses while you're in another app and resumes when you return —
+            time it couldn't see isn't scored. Smooth driving is efficient driving.
           </Text>
         </Card.Content>
       </Card>

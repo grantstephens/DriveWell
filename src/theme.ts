@@ -3,7 +3,7 @@ import { MD3DarkTheme, MD3LightTheme, type MD3Theme } from 'react-native-paper';
 
 /**
  * The whole app's color system, generated from one seed: the lush-green stop
- * of the leaf's own brown-to-green scale (domain/leaf.ts). That scale stays
+ * of the leaf's own red-to-green scale (domain/leaf.ts). That scale stays
  * completely independent of this file — it communicates driving quality,
  * not brand identity — but seeding the Material palette from the same green
  * ties the app's visual identity to the one thing it's actually about.

@@ -1,8 +1,11 @@
 # DriveWell
 
 Drive with this app open and it scores how smooth you are, using nothing but your
-phone's motion sensors (the accelerometer, plus the gyroscope if it has one). A leaf on screen turns from dormant brown through yellow to
-lush green as your driving smooths out, alongside a live percentage score. Smooth
+phone's motion sensors (the accelerometer, plus the gyroscope if it has one). A leaf on screen shades from red through amber to
+lush green as your driving smooths out, alongside a live percentage score. When things go
+wrong it also wilts and the screen edges glow amber then red, so you can tell from the
+corner of your eye; ripples and a soft bloom mark a harsh moment and the recovery from it.
+It never flashes, and it holds still if your phone's reduce-motion setting is on. Smooth
 driving is efficient driving — this is a nudge toward more of it.
 
 Everything happens on the device. No account, no sync, no GPS, no network requests at
@@ -52,7 +55,10 @@ Three screens:
 
 - **Drive** — the leaf. Tap **Start Drive** before you pull off; the leaf tracks your
   smoothness live. Tap **End Drive** when you arrive to save the trip, see its score and a
-  braking/cornering/acceleration traffic light, and share it.
+  braking/cornering/acceleration traffic light, and share it. Android only gives sensor
+  data to the app that's on screen, so if you switch to another app (navigation, say)
+  DriveWell **pauses by itself** and picks up again when you come back; the time it
+  couldn't see isn't scored, and the summary tells you how much there was.
 - **Stats** — your lifetime average, best drive, total time behind the wheel, and a
   "your last 5 drives vs. the 5 before" trend so you can see whether you're actually
   getting smoother.

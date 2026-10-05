@@ -7,7 +7,7 @@ this repository.
 
 An offline driving-smoothness trainer (React Native + Expo). Drive with the app open;
 it reads the accelerometer, scores how jerky the drive is, and shows a leaf that turns
-from brown to green as the driving smooths out, with a percentage score shown live.
+from red through amber to green as the driving smooths out, with a percentage score shown live.
 Android is the only shipping target — there is no accelerometer to read in a browser
 tab, so unlike some sibling projects this one carries no web target, no `react-native-web`,
 and no IndexedDB storage backend.
@@ -58,6 +58,7 @@ except `App.tsx`.
 | `src/screens` | Drive (the leaf), Stats, Settings. |
 | `src/platform` | The one thing that genuinely differs per build: the motion sensors (`motion.*` — the accelerometer, plus the gyroscope where the phone has one, delivered as one sample stream) and the confirm/alert dialog (`confirm.*`, native-only by design — there is no web target to branch on). |
 | `src/components/TrafficLights.tsx` | The three end-of-drive lights (braking, cornering, acceleration). Real traffic-light colours, deliberately not theme colours, for the same reason the leaf isn't themed. |
+| `src/components/EdgeGlow.tsx` | The amber/red wash at the screen edges that warns, in peripheral vision, that a drive is going wrong. Two static SVG layers whose *opacity* is animated (opacity runs natively, so no repaint). Driven by `domain/leafEffects.ts`'s `leafSeverity`/`edgeGlowLevels`. |
 | `src/components/Leaf.tsx` | The leaf's artwork: `MaterialIcons`'s "eco" glyph, tinted by the caller, plus an SVG radial-gradient glow that intensifies with smoothness². Every color decision lives in `domain/leaf.ts` — this component only draws it, entirely independent of the app's own Material theme below (the leaf communicates driving quality, not brand identity). |
 | `src/theme.ts` | The whole app's Material Design 3 theme (`react-native-paper`), generated from one seed color — the leaf's own lush-green stop — via `@material/material-color-utilities` (Google's pure-JS MD3 color algorithm; deliberately not a package that bundles native code for *system* wallpaper theming, which this app has no use for). Every screen reads colors through `useTheme()` from `react-native-paper`, not a custom context — there is no `ThemeContext.tsx`. |
 | `App.tsx` / `DriveContext.tsx` | `PaperProvider` + a Material 3 bottom navigation bar (`BottomNavigation.Bar`, the documented react-native-paper/react-navigation integration pattern) bootstrapped from `useColorScheme()` directly — no stored override, see "Deliberate simplifications" below. Also: store bootstrap, the error screen, and the `revision` counter every write path bumps so Stats and the Drive screen's lifetime-average readout stay in sync. |
@@ -94,12 +95,21 @@ except `App.tsx`.
   path has not yet been validated against a real drive** (the debug export logs gyro
   now, precisely so it can be) — check the braking-vs-acceleration sign convention
   against real captures before trusting it.
-- **Holes in the sensor stream are not driving.** Android stops delivering accelerometer
-  and gyroscope events to an app that is not in the foreground (Android 9+), so a driver
-  who switches to a navigation app leaves DriveWell blind — a real 17-minute drive had
-  ~9 minutes of holes (145 s, 193 s, 213 s). `SmoothnessEngine` treats any `MAX_SAMPLE_GAP_S`
-  silence as a hole: wall-clock `seconds` advances, but nothing is scored across it and the
-  filter re-seeds (before this, that 17-minute drive reported 826 s of "live" time from ~464 s
+- **Holes in the sensor stream are not driving, and the Drive screen pauses on purpose.**
+  Android stops delivering accelerometer and gyroscope events to an app that is not in the
+  foreground (Android 9+), so a driver who switches to a navigation app leaves DriveWell
+  blind — a real 17-minute drive had ~9 minutes of holes (145 s, 193 s, 213 s). Rather
+  than let that happen silently, `DriveScreen` listens to `AppState` while a drive runs:
+  leaving the screen detaches the sensors and shows "Paused", returning re-attaches them to
+  the *same* engine, breakdown and capture (a generation counter makes a restart that is
+  overtaken by another away-trip shut itself down instead of leaking a subscription). The
+  post-drive card notes how long it was off screen. This stays inside "no background
+  scoring" — nothing runs while away; a foreground service would be needed to score through
+  navigation, and was deliberately not taken (new permissions, persistent notification).
+  `SmoothnessEngine` treats any `MAX_SAMPLE_GAP_S` silence as a hole whatever its cause:
+  `seconds` does not advance across it (it counts what the sensors could see, so a paused
+  stretch is not "time behind the wheel"), nothing is scored across it, and the filter
+  re-seeds (before this, that 17-minute drive reported 826 s of "live" time from ~464 s
   of data). `DriveBreakdown` likewise rates on active time, and additionally ignores
   `POST_GAP_SETTLE_S` after a hole and any moment the gyroscope shows the phone tumbling
   about a horizontal axis (`HANDLING_RAD_S`) — a car body barely rolls or pitches, so that
@@ -108,6 +118,20 @@ except `App.tsx`.
   phone was mounted, and its tilt error read as ~0.16 g of phantom acceleration. Real
   gyro logs also show the gyroscope delivering ~12.5 Hz, not the 50 Hz requested; fine for
   yaw smoothed over 0.5 s.
+- **Drive-screen effects are calm by rule, and never rely on colour alone.** The leaf
+  shades green → amber → red (`domain/leaf.ts`), and the same `leafSeverity` drives
+  three non-colour cues for the ~8% of drivers who can't tell red from green: the leaf
+  *wilts*, the screen edges *glow* (amber then red, in peripheral vision), and a red glow
+  *breathes* slowly. One-off events get one brief effect: a single *ripple* per rough
+  patch and a *bloom* when it ends (`LeafEventDetector`'s hysteresis stops a rough road
+  hovering near a threshold from strobing). Nothing moves while driving is fine, nothing
+  flashes (the pulse swings between 75% and 100% strength over ~2 s), and with the phone's
+  reduce-motion setting on everything snaps to its state and holds still. All animation is
+  `opacity`/`transform` only, so it runs natively with no per-frame JS or repaint — the
+  Drive screen has already starved its own accelerometer once by repainting too much.
+  Effects are held back for `EFFECTS_SETTLE_MS` after a drive starts and after returning
+  from another app, because handling the phone reads as a burst of harsh driving. Don't
+  add an effect that fires continuously or that needs the JS thread per frame.
 - **The breakdown is not persisted.** It is only needed for the drive that just ended
   (the share card), so `Trip` and the schema are untouched. Sharing goes through React
   Native's built-in `Share` (plain text), so there is no new native dependency.

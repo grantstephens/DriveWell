@@ -349,11 +349,12 @@ const GRAVITY_G = 1;
 
 /**
  * A silence in the sensor stream longer than this (seconds) is a hole, not
- * slow sampling — in practice the app being in the background, which Android
- * answers by delivering no accelerometer events at all. The trip's wall-clock
- * time still advances across it (the drive really did take that long), but
- * nothing is scored across it, and the low-pass filter is re-seeded rather
- * than differenced against a reading from minutes ago.
+ * slow sampling — in practice the app being off screen, which Android answers
+ * by delivering no accelerometer events at all (and which the Drive screen now
+ * pauses on deliberately). Nothing is scored across it, it doesn't count
+ * toward the trip's time (the engine only counts what it could see), and the
+ * low-pass filter is re-seeded rather than differenced against a reading from
+ * minutes ago.
  */
 const MAX_SAMPLE_GAP_S = 1;
 
@@ -408,7 +409,6 @@ export class SmoothnessEngine {
     if (dt > MAX_SAMPLE_GAP_S) {
       this.filteredMag = mag;
       this.lastT = s.t;
-      this.secondsAcc += dt;
       return;
     }
 
@@ -491,7 +491,11 @@ export class SmoothnessEngine {
     return Math.min(100, this.smoothnessWeighted / this.liveSecondsAcc);
   }
 
-  /** seconds is the accumulated driving time — total wall-clock, including any non-live stretches. */
+  /**
+   * seconds is the accumulated driving time the sensors were delivering,
+   * including non-live stretches but excluding holes in the stream (see
+   * MAX_SAMPLE_GAP_S).
+   */
   get seconds(): number {
     return this.secondsAcc;
   }

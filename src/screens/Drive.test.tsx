@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
-import { Share } from 'react-native';
+import { AppState, type AppStateStatus, Share } from 'react-native';
 import { PaperProvider } from 'react-native-paper';
 
 import { DriveProvider } from '../DriveContext';
@@ -320,7 +320,162 @@ test('a share that fails surfaces a notification instead of crashing', async () 
   share.mockRestore();
 });
 
-test('the leaf turns brown as the drive gets rougher', async () => {
+/**
+ * A controllable stand-in for the OS telling the app it moved to the background
+ * or came back. Like the real thing it tells every listener — React Native
+ * Paper and friends register their own.
+ */
+function fakeAppState() {
+  const handlers = new Set<(state: AppStateStatus) => void>();
+  jest.spyOn(AppState, 'addEventListener').mockImplementation(((
+    _type: string,
+    h: (state: AppStateStatus) => void,
+  ) => {
+    handlers.add(h);
+    return { remove: () => handlers.delete(h) };
+  }) as unknown as typeof AppState.addEventListener);
+  return {
+    /** Deliver one or more state changes back-to-back, with no chance for anything async to settle between them. */
+    async go(...states: AppStateStatus[]) {
+      await act(async () => {
+        for (const state of states) [...handlers].forEach((h) => h(state));
+      });
+    },
+  };
+}
+
+async function startDriving() {
+  await fireEvent.press(screen.getByTestId('drive-start'));
+  await waitFor(() => expect(screen.getByTestId('drive-stop')).toBeTruthy());
+}
+
+function smooth(motion: ReturnType<typeof fakeMotion>, fromMs: number, seconds: number) {
+  for (let i = 0; i <= seconds * 10; i++) {
+    motion.push({ x: 0, y: 0, z: 1 + (i % 2 === 0 ? 0.01 : -0.01), t: fromMs + i * 100 });
+  }
+}
+
+describe('pausing while DriveWell is not on screen', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  test('leaving the screen outside a drive changes nothing', async () => {
+    const app = fakeAppState();
+    fakeMotion();
+    await renderDrive(store);
+
+    await app.go('background', 'active');
+
+    expect(screen.getByTestId('drive-smoothness').props.children).toBe('Ready');
+    expect(startMotion).not.toHaveBeenCalled();
+  });
+
+  test('stops reacting to the app leaving the screen once the drive has ended', async () => {
+    const app = fakeAppState();
+    const motion = fakeMotion();
+    await renderDrive(store);
+    await startDriving();
+    smooth(motion, 0, 10);
+    await fireEvent.press(screen.getByTestId('drive-stop'));
+    await waitFor(() => expect(screen.getByTestId('drive-start')).toBeTruthy());
+    const stopsSoFar = motion.stop.mock.calls.length;
+
+    await app.go('background', 'active');
+
+    expect(motion.stop.mock.calls.length).toBe(stopsSoFar);
+    expect(startMotion).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('drive-smoothness').props.children).toBe('Ready');
+  });
+
+  test('going to the background stops the sensors and shows Paused; coming back restarts them', async () => {
+    const app = fakeAppState();
+    const motion = fakeMotion();
+    await renderDrive(store);
+    await startDriving();
+    smooth(motion, 0, 3);
+    expect(startMotion).toHaveBeenCalledTimes(1);
+
+    await app.go('background');
+    expect(motion.stop).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('drive-smoothness').props.children).toBe('Paused');
+
+    await app.go('active');
+    await waitFor(() => expect(startMotion).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByTestId('drive-smoothness').props.children).not.toBe('Paused'),
+    );
+  });
+
+  test('time off screen is neither scored nor counted as driving time', async () => {
+    const app = fakeAppState();
+    const motion = fakeMotion();
+    await renderDrive(store);
+    await startDriving();
+    smooth(motion, 0, 10);
+
+    await app.go('background');
+    await app.go('active');
+    await waitFor(() => expect(startMotion).toHaveBeenCalledTimes(2));
+
+    // Sensor time jumps five minutes while the app was away.
+    smooth(motion, 300_000, 10);
+    await fireEvent.press(screen.getByTestId('drive-stop'));
+    await waitFor(() => expect(screen.getByTestId('drive-start')).toBeTruthy());
+
+    const trips = await store.trips();
+    expect(trips).toHaveLength(1);
+    expect(trips[0]!.seconds).toBeGreaterThanOrEqual(18);
+    expect(trips[0]!.seconds).toBeLessThan(30);
+  });
+
+  test('the post-drive summary says how long DriveWell was off screen', async () => {
+    let now = 1_000_000;
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const app = fakeAppState();
+    const motion = fakeMotion();
+    await renderDrive(store);
+    await startDriving();
+    smooth(motion, 0, 10);
+
+    await app.go('background');
+    now += 92_000; // a minute and a half away
+    await app.go('active');
+    await waitFor(() => expect(startMotion).toHaveBeenCalledTimes(2));
+    smooth(motion, 300_000, 10);
+    await fireEvent.press(screen.getByTestId('drive-stop'));
+    await waitFor(() => expect(screen.getByTestId('drive-start')).toBeTruthy());
+
+    expect(screen.getByTestId('drive-off-screen').props.children).toContain('1:32');
+  });
+
+  test('no note about being off screen when it never was', async () => {
+    fakeAppState();
+    const motion = fakeMotion();
+    await renderDrive(store);
+    await startDriving();
+    smooth(motion, 0, 10);
+    await fireEvent.press(screen.getByTestId('drive-stop'));
+    await waitFor(() => expect(screen.getByTestId('drive-start')).toBeTruthy());
+
+    expect(screen.getByTestId('drive-summary')).toBeTruthy();
+    expect(screen.queryByTestId('drive-off-screen')).toBeNull();
+  });
+
+  // Away, back, away again before the restart finished: the half-started
+  // subscription must be shut down, not left running in the background.
+  test('a quick away-back-away does not leak a running subscription', async () => {
+    const app = fakeAppState();
+    const motion = fakeMotion();
+    await renderDrive(store);
+    await startDriving();
+
+    await app.go('background', 'active', 'background');
+    await waitFor(() => expect(startMotion).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(motion.stop).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('drive-smoothness').props.children).toBe('Paused');
+  });
+});
+
+test('the leaf changes colour as the drive gets rougher', async () => {
   const motion = fakeMotion();
   await renderDrive(store);
   await fireEvent.press(screen.getByTestId('drive-start'));
@@ -337,7 +492,7 @@ test('the leaf turns brown as the drive gets rougher', async () => {
   const greenFill = leafFill();
 
   // A realistic panic-stop-grade brake (1 g ramping in over 1 s, then held)
-  // should drag the leaf toward brown.
+  // should drag the leaf toward red.
   for (let i = 6; i <= 16; i++) {
     motion.push({ x: 1 + 1.0 * ((i - 6) / 10), y: 0, z: 0, t: i * 100 });
   }
