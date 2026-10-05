@@ -1,0 +1,32 @@
+DriveWell is now Featherfoot — plus pausing, and a leaf that tells you when it's going wrong.
+
+Renamed: the old name belonged to an existing driving-telematics product, so
+the app is now Featherfoot (an old idiom for a gentle foot on the pedals —
+the opposite of a lead foot). Because the app's identity changed, Android
+treats this as a separate app: it installs alongside your old DriveWell,
+starts with an empty history, and doesn't carry your old trips over. Once
+you're happy with it you can uninstall the old one. Everything else — the
+smoothness score, the end-of-drive traffic lights, the share card — is the
+same, just with the new name on it.
+
+New: pauses itself when it isn't on screen. Android stops giving sensor data
+to an app that isn't in front, which used to leave a drive quietly blind
+whenever you switched to a navigation app (one real drive lost nine of
+seventeen minutes that way). Now Featherfoot pauses when you leave it and
+picks up where it left off when you come back. Time it couldn't see isn't
+scored or counted as driving time, and the end-of-drive card tells you how
+much there was.
+
+New: the leaf now shades from green through amber to red instead of green to
+brown, to match the traffic lights. Because red and green look alike to a lot
+of drivers, colour is never the only warning: the leaf wilts when things get
+rough, the edges of the screen glow amber and then red where you can see them
+without looking, a red glow breathes slowly, a single ripple marks a harsh
+moment, and a soft bloom marks the recovery. None of it moves while you're
+driving well, nothing flashes, and it all holds still if your phone's
+reduce-motion setting is on.
+
+Still a beta: the effects and the braking/acceleration lights are checked
+against synthetic and a handful of real drives, not a fleet. If anything
+looks or feels wrong, "Export last drive" in Settings is the fastest way to
+get it looked at.
