@@ -279,12 +279,24 @@ deletes it — stated plainly in the README, not a gap to silently fix later.
 
 ## Assets
 
-The app icon is a single flat leaf silhouette — solid colors, no gradients or blurred
-drop shadows, so it stays crisp at small sizes and through Android's adaptive-icon
-squircle crop. `assets/icon.svg` is the editable source (full-bleed, artwork centered in
-the safe zone); `assets/icon-foreground.svg` and `assets/icon-monochrome.svg` are the
-split layers Android's adaptive icon needs — the background is a flat `backgroundColor`
-in `app.json`, not an image.
+The app icon is a steering wheel whose third spoke grows into a leaf: "driving", and
+gently. Flat solid colours (deep green `#1B4D2E`, lime `#9CCC65`), no gradients or blurred
+drop shadows, so it stays crisp at small sizes and through Android's adaptive-icon crop.
+`assets/icon.svg` is the editable source (full-bleed); `assets/icon-foreground.svg` and
+`assets/icon-monochrome.svg` are the split layers Android's adaptive icon needs — the
+background is a flat `backgroundColor` in `app.json`, not an image.
+
+Two rules the artwork has to keep, both easy to break while editing:
+
+- **Stay inside the safe circle.** Android only guarantees a circle of 66/108 of the tile
+  (radius ~313 px on the 1024 canvas) survives every launcher mask. The wheel is
+  deliberately off-centre so that wheel *plus* the leaf bursting out of it is centred: the
+  ring's far edge and the leaf tip each sit ~310 px from the centre. Moving or enlarging
+  either clips on some launchers.
+- **The themed (monochrome) layer has no colours to lean on.** The gaps in the colour icon
+  (the outline around the leaf, its veins, the ring around the hub) are painted in the
+  background colour; in `icon-monochrome.svg` they are cut out with an SVG `<mask>` so
+  they are real transparency. Change a gap in one file and change it in the other.
 
 Regenerate every raster asset from the three source SVGs after any artwork change:
 
