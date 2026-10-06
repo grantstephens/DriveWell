@@ -14,7 +14,7 @@ Everything happens on the device. No account, no sync, no GPS, no network reques
 all — Featherfoot has nothing to send and nowhere to send it.
 
 [![Licence: GPL v3](https://img.shields.io/badge/Licence-GPLv3-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/grantstephens/DriveWell?include_prereleases)](https://github.com/grantstephens/DriveWell/releases)
+[![Release](https://img.shields.io/github/v/release/grantstephens/featherfoot?include_prereleases)](https://github.com/grantstephens/featherfoot/releases)
 [![F-Droid](https://img.shields.io/f-droid/v/xyz.hub13.featherfoot)](https://f-droid.org/packages/xyz.hub13.featherfoot/)
 
 Built with [React Native](https://reactnative.dev) (Expo), targeting Android.
@@ -35,12 +35,12 @@ keeps them updated, with no app store in the middle.
 
 1. Install Obtainium.
 2. Tap **Add App**.
-3. Paste `https://github.com/grantstephens/DriveWell`.
+3. Paste `https://github.com/grantstephens/featherfoot`.
 4. Tap **Add**, then **Install**.
 
 ### Directly
 
-Download the APK from the [Releases page](https://github.com/grantstephens/DriveWell/releases)
+Download the APK from the [Releases page](https://github.com/grantstephens/featherfoot/releases)
 and open it. Android will warn you about installing from an unknown source, because the
 app is signed with the project's own key rather than distributed through Play.
 

@@ -25,11 +25,11 @@ The app is **Featherfoot** (an old driving idiom for a gentle foot on the pedals
 opposite of a lead foot); it was called DriveWell until beta.13. The rename moved the
 Android package id (`xyz.hub13.featherfoot`), the database (`featherfoot.db`), the release
 artefact names, the F-Droid recipe and every user-facing string. Deliberately **not**
-renamed, because they are infrastructure that exists under the old name: the GitHub
-repository URL (rename the repo, then update `SHARE_URL` in `src/domain/share.ts`, the
-README links and the F-Droid recipe), the signing keystore file and the
-`ANDROID_KEY_ALIAS` secret (`drivewell`), the old per-release changelogs, and
-`docs/superpowers/`. A new package id is a different app to Android: installs from before
+renamed, because they are infrastructure that exists under the old name: the signing
+keystore file and the `ANDROID_KEY_ALIAS` secret (`drivewell`), the old per-release
+changelogs, and `docs/superpowers/`. The GitHub repository was renamed too
+(`grantstephens/featherfoot`; GitHub redirects the old URL, so old links and Obtainium
+entries keep working). A new package id is a different app to Android: installs from before
 the rename are separate and their trips don't carry over.
 
 ## Expo version

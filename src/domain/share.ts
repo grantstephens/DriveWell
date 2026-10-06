@@ -1,7 +1,7 @@
 import type { Breakdown, Light } from './breakdown';
 
 /** Where a curious recipient can find the app. */
-export const SHARE_URL = 'https://github.com/grantstephens/DriveWell';
+export const SHARE_URL = 'https://github.com/grantstephens/featherfoot';
 
 const CIRCLE: Record<Light, string> = {
   green: '🟢',
