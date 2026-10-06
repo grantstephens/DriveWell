@@ -1,0 +1,21 @@
+A new icon: a steering wheel whose third spoke grows into a leaf.
+
+The old leaf said "eco" but not "driving". The wheel says driving; the leaf
+growing out of it says gently — which is the whole idea behind Featherfoot.
+It works as a themed icon too, on phones that tint icons to match the
+wallpaper. The leaf inside the app is unchanged: it's the live readout, not
+the logo.
+
+That's the only change in this build — the scoring, the traffic lights, the
+pause-when-off-screen behaviour and the leaf effects are exactly as in
+beta.13. The project's GitHub address has also moved to
+github.com/grantstephens/featherfoot (the old address redirects, so existing
+links and Obtainium entries keep working), and the share card now points
+there.
+
+If you're coming from the old DriveWell app: Featherfoot is a separate
+install with its own, empty history, so you can uninstall DriveWell once
+you're happy.
+
+Still a beta: if something looks or feels wrong, "Export last drive" in
+Settings is the fastest way to get it looked at.
